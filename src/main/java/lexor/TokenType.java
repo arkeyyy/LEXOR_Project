@@ -1,4 +1,4 @@
-package org.lexor;
+package lexor;
 
 public enum TokenType {
     // Literals
