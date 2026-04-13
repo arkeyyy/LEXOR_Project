@@ -131,6 +131,10 @@ public class SemanticAnalyzer {
             case VariableNode n -> symbolTable.getType(n.name);
             case BinaryOpNode n -> inferBinaryType(n);
             case UnaryOpNode  n -> inferUnaryType(n);
+            case AssignNode   n -> {
+                analyzeAssign(n);
+                yield symbolTable.getType(n.name);
+            }
             default -> throw new RuntimeException(
                     "Cannot infer type of: " + node.getClass().getSimpleName()
             );
