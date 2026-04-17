@@ -25,8 +25,8 @@ public class SemanticAnalyzer {
             case IfNode        n -> analyzeIf(n);
             case ForNode       n -> analyzeFor(n);
             case RepeatNode    n -> analyzeRepeat(n);
-            default -> throw new RuntimeException(
-                    "Unknown node type: " + node.getClass().getSimpleName()
+            default -> throw new LexorException(
+                    LexorException.Phase.SEMANTIC, node.line, "Unknown node type: " + node.getClass().getSimpleName()
             );
         }
     }
@@ -37,7 +37,7 @@ public class SemanticAnalyzer {
         Object defaultValue = getDefault(node.type);
         if (node.value != null) {
             String valueType = inferType(node.value);
-            checkTypeMatch(node.type, valueType, "Declaration of '" + node.name + "'");
+            checkTypeMatch(node.type, valueType, "Declaration of '" + node.name + "'", node.line);
         }
         symbolTable.declare(node.name, node.type, defaultValue);
     }
@@ -56,11 +56,11 @@ public class SemanticAnalyzer {
 
     private void analyzeAssign(AssignNode node) {
         if (!symbolTable.isDeclared(node.name)) {
-            throw new RuntimeException("Assignment to undeclared variable '" + node.name + "'.");
+            throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "Assignment to undeclared variable '" + node.name + "'.");
         }
         String varType   = symbolTable.getType(node.name);
         String valueType = inferType(node.value);
-        checkTypeMatch(varType, valueType, "Assignment to '" + node.name + "'");
+        checkTypeMatch(varType, valueType, "Assignment to '" + node.name + "'", node.line);
     }
 
     // Printing ///////////////////////////////////////////////////////////////////////////////////
@@ -68,7 +68,7 @@ public class SemanticAnalyzer {
     private void analyzePrint(PrintNode node) {
         for (Node part : node.parts) {
             if (part instanceof VariableNode v && !symbolTable.isDeclared(v.name)) {
-                throw new RuntimeException("Undeclared variable '" + v.name + "' in PRINT.");
+                throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "Undeclared variable '" + v.name + "' in PRINT.");
             }
         }
     }
@@ -78,7 +78,7 @@ public class SemanticAnalyzer {
     private void analyzeScan(ScanNode node) {
         for (String var : node.variables) {
             if (!symbolTable.isDeclared(var)) {
-                throw new RuntimeException("Undeclared variable '" + var + "' in SCAN.");
+                throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "Undeclared variable '" + var + "' in SCAN.");
             }
         }
     }
@@ -88,7 +88,7 @@ public class SemanticAnalyzer {
     private void analyzeIf(IfNode node) {
         String condType = inferType(node.condition);
         if (!condType.equals("BOOL")) {
-            throw new RuntimeException("IF condition must be BOOL, got " + condType + ".");
+            throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "IF condition must be BOOL, got " + condType + ".");
         }
         analyzeBlock(node.thenBranch);
         for (IfNode elseIf : node.elseIfBranches) analyzeIf(elseIf);
@@ -101,7 +101,7 @@ public class SemanticAnalyzer {
         analyzeNode(node.initialization);
         String condType = inferType(node.condition);
         if (!condType.equals("BOOL")) {
-            throw new RuntimeException("FOR condition must be BOOL, got " + condType + ".");
+            throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "FOR condition must be BOOL, got " + condType + ".");
         }
         analyzeNode(node.update);
         analyzeBlock(node.body);
@@ -112,7 +112,7 @@ public class SemanticAnalyzer {
     private void analyzeRepeat(RepeatNode node) {
         String condType = inferType(node.condition);
         if (!condType.equals("BOOL")) {
-            throw new RuntimeException("REPEAT WHEN condition must be BOOL, got " + condType + ".");
+            throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "REPEAT WHEN condition must be BOOL, got " + condType + ".");
         }
         analyzeBlock(node.body);
     }
@@ -135,8 +135,8 @@ public class SemanticAnalyzer {
                 analyzeAssign(n);
                 yield symbolTable.getType(n.name);
             }
-            default -> throw new RuntimeException(
-                    "Cannot infer type of: " + node.getClass().getSimpleName()
+            default -> throw new LexorException(
+                    LexorException.Phase.SEMANTIC, node.line, "Cannot infer type of: " + node.getClass().getSimpleName()
             );
         };
     }
@@ -149,25 +149,25 @@ public class SemanticAnalyzer {
             case "+", "-", "*", "/", "%" -> {
                 if (left.equals("FLOAT") || right.equals("FLOAT")) yield "FLOAT";
                 if (left.equals("INT")   && right.equals("INT"))   yield "INT";
-                throw new RuntimeException(
-                        "Arithmetic operator '" + node.operator + "' not valid for " + left + " and " + right
+                throw new LexorException(
+                        LexorException.Phase.SEMANTIC, node.line, "Arithmetic operator '" + node.operator + "' not valid for " + left + " and " + right
                 );
             }
             case ">", "<", ">=", "<=", "==", "<>" -> {
                 if (!left.equals(right)) {
-                    throw new RuntimeException(
-                            "Cannot compare " + left + " with " + right + "."
+                    throw new LexorException(
+                            LexorException.Phase.SEMANTIC, node.line, "Cannot compare " + left + " with " + right + "."
                     );
                 }
                 yield "BOOL";
             }
             case "AND", "OR" -> {
                 if (!left.equals("BOOL") || !right.equals("BOOL")) {
-                    throw new RuntimeException("AND/OR requires BOOL operands.");
+                    throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "AND/OR requires BOOL operands.");
                 }
                 yield "BOOL";
             }
-            default -> throw new RuntimeException("Unknown operator: " + node.operator);
+            default -> throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "Unknown operator: " + node.operator);
         };
     }
 
@@ -176,28 +176,28 @@ public class SemanticAnalyzer {
         return switch (node.operator) {
             case "+", "-" -> {
                 if (!operandType.equals("INT") && !operandType.equals("FLOAT")) {
-                    throw new RuntimeException("Unary +/- requires INT or FLOAT.");
+                    throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "Unary +/- requires INT or FLOAT.");
                 }
                 yield operandType;
             }
             case "NOT" -> {
                 if (!operandType.equals("BOOL")) {
-                    throw new RuntimeException("NOT requires a BOOL operand.");
+                    throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "NOT requires a BOOL operand.");
                 }
                 yield "BOOL";
             }
-            default -> throw new RuntimeException("Unknown unary operator: " + node.operator);
+            default -> throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "Unknown unary operator: " + node.operator);
         };
     }
 
     // Type Check Helper /////////////////////////////////////////////////////////////////////////////
 
-    private void checkTypeMatch(String expected, String actual, String context) {
+    private void checkTypeMatch(String expected, String actual, String context, int line) {
         // Allow INT -> FLOAT promotion since float can hold int values no problemos
         if (expected.equals("FLOAT") && actual.equals("INT")) return;
         if (!expected.equals(actual)) {
-            throw new RuntimeException(
-                    context + ": type mismatch — expected " + expected + ", got " + actual + "."
+            throw new LexorException(
+                    LexorException.Phase.SEMANTIC, line, context + ": type mismatch — expected " + expected + ", got " + actual + "."
             );
         }
     }

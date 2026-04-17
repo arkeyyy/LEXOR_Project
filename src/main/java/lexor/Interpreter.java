@@ -32,8 +32,8 @@ public class Interpreter {
             case IfNode       n -> executeIf(n);
             case ForNode      n -> executeFor(n);
             case RepeatNode n -> executeRepeat(n);
-            default -> throw new RuntimeException(
-                    "Unknown node: " + node.getClass().getSimpleName()
+            default -> throw new LexorException(
+                    LexorException.Phase.RUNTIME, node.line, "Unknown node: " + node.getClass().getSimpleName()
             );
         }
     }
@@ -167,8 +167,8 @@ public class Interpreter {
             case AssignNode   n -> { executeAssign(n); yield symbolTable.getValue(n.name); }
             case BinaryOpNode n -> evaluateBinary(n);
             case UnaryOpNode  n -> evaluateUnary(n);
-            default -> throw new RuntimeException(
-                    "Cannot evaluate node: " + node.getClass().getSimpleName()
+            default -> throw new LexorException(
+                    LexorException.Phase.RUNTIME, node.line, "Cannot evaluate node: " + node.getClass().getSimpleName()
             );
         };
     }
@@ -180,61 +180,61 @@ public class Interpreter {
         Object right = evaluate(node.right);
 
         return switch (node.operator) {
-            case "+"  -> addValues(left, right);
-            case "-"  -> subtractValues(left, right);
-            case "*"  -> multiplyValues(left, right);
-            case "/"  -> divideValues(left, right);
-            case "%"  -> moduloValues(left, right);
-            case ">"  -> compareValues(left, right) > 0;
-            case "<"  -> compareValues(left, right) < 0;
-            case ">=" -> compareValues(left, right) >= 0;
-            case "<=" -> compareValues(left, right) <= 0;
-            case "==" -> compareValues(left, right) == 0;
-            case "<>" -> compareValues(left, right) != 0;
+            case "+"  -> addValues(left, right, node.line);
+            case "-"  -> subtractValues(left, right, node.line);
+            case "*"  -> multiplyValues(left, right, node.line);
+            case "/"  -> divideValues(left, right, node.line);
+            case "%"  -> moduloValues(left, right, node.line);
+            case ">"  -> compareValues(left, right, node.line) > 0;
+            case "<"  -> compareValues(left, right, node.line) < 0;
+            case ">=" -> compareValues(left, right, node.line) >= 0;
+            case "<=" -> compareValues(left, right, node.line) <= 0;
+            case "==" -> compareValues(left, right, node.line) == 0;
+            case "<>" -> compareValues(left, right, node.line) != 0;
             case "AND"-> (boolean) left && (boolean) right;
             case "OR" -> (boolean) left || (boolean) right;
-            default   -> throw new RuntimeException("Unknown operator: " + node.operator);
+            default   -> throw new LexorException(LexorException.Phase.RUNTIME, node.line, "Unknown operator: " + node.operator);
         };
     }
 
-    private Object addValues(Object left, Object right) {
+    private Object addValues(Object left, Object right, int line) {
         if (left instanceof Float || right instanceof Float)
-            return toFloat(left) + toFloat(right);
-        return toInt(left) + toInt(right);
+            return toFloat(left, line) + toFloat(right, line);
+        return toInt(left, line) + toInt(right, line);
     }
 
-    private Object subtractValues(Object left, Object right) {
+    private Object subtractValues(Object left, Object right, int line) {
         if (left instanceof Float || right instanceof Float)
-            return toFloat(left) - toFloat(right);
-        return toInt(left) - toInt(right);
+            return toFloat(left, line) - toFloat(right, line);
+        return toInt(left, line) - toInt(right, line);
     }
 
-    private Object multiplyValues(Object left, Object right) {
+    private Object multiplyValues(Object left, Object right, int line) {
         if (left instanceof Float || right instanceof Float)
-            return toFloat(left) * toFloat(right);
-        return toInt(left) * toInt(right);
+            return toFloat(left, line) * toFloat(right, line);
+        return toInt(left, line) * toInt(right, line);
     }
 
-    private Object divideValues(Object left, Object right) {
+    private Object divideValues(Object left, Object right, int line) {
         if (left instanceof Float || right instanceof Float)
-            return toFloat(left) / toFloat(right);
-        int divisor = toInt(right);
-        if (divisor == 0) throw new RuntimeException("Division by zero.");
-        return toInt(left) / divisor;
+            return toFloat(left, line) / toFloat(right, line);
+        int divisor = toInt(right, line);
+        if (divisor == 0) throw new LexorException(LexorException.Phase.RUNTIME, line, "Division by zero.");
+        return toInt(left, line) / divisor;
     }
 
-    private Object moduloValues(Object left, Object right) {
+    private Object moduloValues(Object left, Object right, int line) {
         if (left instanceof Float || right instanceof Float)
-            return toFloat(left) % toFloat(right);
-        return toInt(left) % toInt(right);
+            return toFloat(left, line) % toFloat(right, line);
+        return toInt(left, line) % toInt(right, line);
     }
 
-    private int compareValues(Object left, Object right) {
+    private int compareValues(Object left, Object right, int line) {
         if (left instanceof Integer l && right instanceof Integer r) return Integer.compare(l, r);
-        if (left instanceof Float   || right instanceof Float)       return Float.compare(toFloat(left), toFloat(right));
+        if (left instanceof Float   || right instanceof Float)       return Float.compare(toFloat(left, line), toFloat(right, line));
         if (left instanceof Boolean l && right instanceof Boolean r)  return Boolean.compare(l, r);
         if (left instanceof Character l && right instanceof Character r) return Character.compare(l, r);
-        throw new RuntimeException("Cannot compare " + left + " and " + right);
+        throw new LexorException(LexorException.Phase.RUNTIME, line, "Cannot compare " + left + " and " + right);
     }
 
     // Unary Expressions ///////////////////////////////////////////////////////////////////////////////
@@ -242,24 +242,24 @@ public class Interpreter {
     private Object evaluateUnary(UnaryOpNode node) {
         Object operand = evaluate(node.operand);
         return switch (node.operator) {
-            case "-" -> operand instanceof Float f ? -f : -toInt(operand);
+            case "-" -> operand instanceof Float f ? -f : -toInt(operand, node.line);
             case "+" -> operand;
             case "NOT" -> !(boolean) operand;
-            default  -> throw new RuntimeException("Unknown unary operator: " + node.operator);
+            default  -> throw new LexorException(LexorException.Phase.RUNTIME, node.line, "Unknown unary operator: " + node.operator);
         };
     }
 
     // Type Helpers /////////////////////////////////////////////////////////////////////////////////////
 
-    private int toInt(Object value) {
+    private int toInt(Object value, int line) {
         if (value instanceof Integer i) return i;
         if (value instanceof Float   f) return f.intValue();
-        throw new RuntimeException("Cannot convert to INT: " + value);
+        throw new LexorException(LexorException.Phase.RUNTIME, line, "Cannot convert to INT: " + value);
     }
 
-    private float toFloat(Object value) {
+    private float toFloat(Object value, int line) {
         if (value instanceof Float   f) return f;
         if (value instanceof Integer i) return i.floatValue();
-        throw new RuntimeException("Cannot convert to FLOAT: " + value);
+        throw new LexorException(LexorException.Phase.RUNTIME, line, "Cannot convert to FLOAT: " + value);
     }
 }
