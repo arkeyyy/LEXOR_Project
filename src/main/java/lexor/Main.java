@@ -9,36 +9,37 @@ public class Main {
 
         // sample code to test if the Phases work adhfiubwasgowruie
         String source = """
-            SCRIPT AREA
-            START SCRIPT
-            DECLARE INT x, y, z=5
-            DECLARE CHAR a_1='n'
-            DECLARE BOOL t = "TRUE"
-            DECLARE FLOAT f = 6.7
-            f = f + 6
-            x=y=4
-            a_1='c'
-            
-            PRINT: x & t & z & $ & a_1
-            PRINT: f
-            
-            IF (6 < 7)
-            START IF
-                PRINT: "HI EVERYONES"
-            END IF
-            ELSE IF (4 >= 9)
-            START IF
-                PRINT: "ROCKS CLIMBING TA"
-            END IF
-            ELSE IF (4 <= 4)
-            START IF
-                PRINT: "NICE WEATHER INIT?"
-            END IF
-            ELSE
-            START IF
-                PRINT: "SUSPENDS KLASE OI GALENOGS"
-            END IF
-            END SCRIPT
+                SCRIPT AREA
+                    START SCRIPT
+                          DECLARE INT x, y, z=5
+                          DECLARE CHAR a_1='n'
+                          DECLARE BOOL t = "TRUE"
+                          DECLARE FLOAT f = 6.7
+                          f = f + 6
+                          x=y=4
+                          a_1='c'
+        
+                          PRINT: x & t & z & $ & a_1
+                          PRINT: f
+        
+                          IF (6 < 7)
+                          START IF
+                              PRINT: "IF BLOCK"
+                          END IF
+                          ELSE IF (4 >= 9)
+                          START IF
+                              PRINT: "ELSE IF BLOCK (4 >= 9)"
+                          END IF
+                          ELSE IF (4 <= 4)
+                          START IF
+                              PRINT: "ELSE IF BLOCK (4 <= 4)"
+                          END IF
+                          ELSE
+                          START IF
+                              PRINT: "ELSE BLOCK"
+                          END IF
+                          END SCRIPT
+                
             """;
 
         // Lexer

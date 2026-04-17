@@ -91,7 +91,7 @@ public class Interpreter {
     // Scan  ////////////////////////////////////////////////////////////////////////////////////////
 
     private void executeScan(ScanNode node) {
-        System.out.print("Input: ");
+        // System.out.print("Input: ");
         String[] inputs = scanner.nextLine().split(",");
 
         for (int i = 0; i < node.variables.size(); i++) {
