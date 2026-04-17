@@ -31,4 +31,7 @@ public class LexorException extends RuntimeException {
         if (line >= 0) return prefix + " at line " + line + ": " + message;
         return prefix + ": " + message;
     }
+
+    public int getLine(){return line;}
+    public Phase getPhase(){return phase;}
 }

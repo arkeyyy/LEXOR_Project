@@ -137,12 +137,12 @@ public class Lexer {
     private void readCharLiteral() {
         pos++; // skip opening '
         if (pos >= source.length()) {
-            throw new RuntimeException("Unterminated CHAR literal at line " + line);
+            throw new LexorException(LexorException.Phase.LEXER, line, "Unterminated CHAR literal.");
         }
         char value = source.charAt(pos);
         pos++; // skip the actual character
         if (pos >= source.length() || source.charAt(pos) != '\'') {
-            throw new RuntimeException("CHAR literal must be a single character at line " + line);
+            throw new LexorException(LexorException.Phase.LEXER, line, "CHAR literal must be a single character");
         }
         pos++; // skip closing '
         tokens.add(new Token(TokenType.CHAR_LITERAL, String.valueOf(value), line));
@@ -153,13 +153,13 @@ public class Lexer {
         StringBuilder sb = new StringBuilder();
         while (pos < source.length() && source.charAt(pos) != '"') {
             if (source.charAt(pos) == '\n') {
-                throw new RuntimeException("Unterminated string at line " + line);
+                throw new LexorException(LexorException.Phase.LEXER, line, "Unterminated string");
             }
             sb.append(source.charAt(pos));
             pos++;
         }
         if (pos >= source.length()) {
-            throw new RuntimeException("Unterminated string at line " + line);
+            throw new LexorException(LexorException.Phase.LEXER, line, "Unterminated string");
         }
         pos++; // skip closing "
         String value = sb.toString();
@@ -249,9 +249,7 @@ public class Lexer {
             case ']' -> { tokens.add(new Token(TokenType.RBRACKET, "]", line)); pos++; }
 
             default -> {
-                throw new RuntimeException(
-                        "Unknown character '" + c + "' at line " + line
-                );
+                throw new LexorException(LexorException.Phase.LEXER, line, "Unknown character '" + c + "'.");
             }
         }
     }
