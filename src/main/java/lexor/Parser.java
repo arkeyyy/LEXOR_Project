@@ -31,8 +31,7 @@ public class Parser {
 
     private Token expect(TokenType type) {
         if (current().type != type) {
-            throw new RuntimeException(
-                    "Expected " + type + " but got '" + current().value + "' at line " + current().line
+            throw new LexorException(LexorException.Phase.PARSER, current().line, "Expected " + type + " but got '" + current().value + "'."
             );
         }
         return consume();
@@ -106,8 +105,8 @@ public class Parser {
             case IF         -> parseIf();
             case FOR        -> parseFor();
             case REPEAT_WHEN -> parseRepeat();
-            default -> throw new RuntimeException(
-                    "Unexpected token '" + current().value + "' at line " + current().line
+            default -> throw new LexorException(
+                    LexorException.Phase.PARSER, current().line, "Unexpected token '" + current().value + "'."
             );
         };
     }
@@ -359,8 +358,8 @@ public class Parser {
                 expect(TokenType.RPAREN);
                 return expr;
             }
-            default -> throw new RuntimeException(
-                    "Unexpected token '" + t.value + "' at line " + t.line
+            default -> throw new LexorException(
+                    LexorException.Phase.PARSER, t.line, "Unexpected token '" + t.value + "'."
             );
         }
     }
