@@ -1,0 +1,51 @@
+SCRIPT AREA
+    START SCRIPT
+        DECLARE INT x, mid, i, j, space, w
+        PRINT: "Enter a number: "
+        SCAN: x
+
+        IF (x % 2 == 0)
+            START IF
+                mid = x/2
+            END IF
+        ELSE
+            START IF
+                mid = (x/2) + 1
+            END IF
+
+        space = mid-1
+        w = 1
+
+        FOR (i=1, i <= x, i=i+1)
+            START FOR
+
+                FOR (j = 1, j <= space, j=j+1)
+                    START FOR
+                        PRINT: ' '
+                    END FOR
+
+                FOR (j = 1, j <= w, j=j+1)
+                    START FOR
+                        IF (i == mid AND j == mid)
+                            START IF
+                                PRINT: x
+                            END IF
+                        ELSE
+                            START IF
+                                PRINT: '*'
+                            END IF
+                    END FOR
+
+                IF (i < mid)
+                    START IF
+                        space = space-1
+                        w = w+2
+                    END IF
+                ELSE
+                    START IF
+                        space = space+1
+                        w = w-2
+                    END IF
+            PRINT: $
+            END FOR
+    END SCRIPT
