@@ -9,65 +9,71 @@ public class Main {
 
         // sample code to test if the Phases work adhfiubwasgowruie
         String source = """
-                SCRIPT AREA
-                    START SCRIPT
-                          DECLARE INT x, y, z=5
-                          DECLARE CHAR a_1='n'
-                          DECLARE BOOL t = "TRUE"
-                          DECLARE FLOAT f = 6.7
-                          f = f + 6
-                          x=y=4
-                          a_1='c'
-        
-                          PRINT: x & t & z & $ & a_1
-                          PRINT: f
-        
-                          IF (6 < 7)
-                          START IF
-                              PRINT: "IF BLOCK"
-                          END IF
-                          ELSE IF (4 >= 9)
-                          START IF
-                              PRINT: "ELSE IF BLOCK (4 >= 9)"
-                          END IF
-                          ELSE IF (4 <= 4)
-                          START IF
-                              PRINT: "ELSE IF BLOCK (4 <= 4)"
-                          END IF
-                          ELSE
-                          START IF
-                              PRINT: "ELSE BLOCK"
-                          END IF
-                          END SCRIPT
+                    SCRIPT AREA
+                        START SCRIPT
+                              DECLARE INT x, y, z=5
+                              DECLARE CHAR a_1='n'
+                              DECLARE BOOL t = "TRUE"
+                              DECLARE FLOAT f = 6.7
+                              f = f + 6
+                              x=y=4
+                              a_1='c'
                 
-            """;
+                              PRINT: x & t & z & $ & a_1
+                              PRINT: f
+                
+                              IF (6 < 7)
+                              START IF
+                                  PRINT: "IF BLOCK"
+                              END IF
+                              ELSE IF (4 >= 9)
+                              START IF
+                                  PRINT: "ELSE IF BLOCK (4 >= 9)"
+                              END IF
+                              ELSE IF (4 <= 4)
+                              START IF
+                                  PRINT: "ELSE IF BLOCK (4 <= 4)"
+                              END IF
+                              ELSE
+                              START IF
+                                  PRINT: "ELSE BLOCK"
+                              END IF
+                              END SCRIPT
+                
+                """;
 
-        // Lexer
-        Lexer lexer = new Lexer(source);
-        List<Token> tokens = lexer.tokenize();
+        try {
+            // Lexer
+            Lexer lexer = new Lexer(source);
+            List<Token> tokens = lexer.tokenize();
 
-        for (Token t : tokens) {
-            System.out.println(t);
+            for (Token t : tokens) {
+                System.out.println(t);
+            }
+            System.out.println();
+
+            // Parser
+            Parser parser = new Parser(tokens);
+            ProgramNode program = parser.parse();
+
+            System.out.println("Parsed " + program.statements.size() + " statements successfully!");
+            for (Node node : program.statements) {
+                System.out.println(node.getClass().getSimpleName());
+            }
+            System.out.println();
+
+            // Semantic Analysis
+            SemanticAnalyzer analyzer = new SemanticAnalyzer();
+            analyzer.analyze(program);
+            System.out.println("Semantic analysis passed. No errors found\n");
+
+            // Interpreter
+            Interpreter interpreter = new Interpreter(analyzer.getSymbolTable());
+            interpreter.execute(program);
+
+        } catch (Exception e) {
+            System.err.println(e.getMessage());
+            // e.printStackTrace();
         }
-        System.out.println();
-
-        // Parser
-        Parser parser = new Parser(tokens);
-        ProgramNode program = parser.parse();
-
-        System.out.println("Parsed " + program.statements.size() + " statements successfully!");
-        for (Node node : program.statements) {
-            System.out.println(node.getClass().getSimpleName());
-        }
-        System.out.println();
-
-        // Semantic Analysis
-        SemanticAnalyzer analyzer = new SemanticAnalyzer();
-        analyzer.analyze(program);
-        System.out.println("Semantic analysis passed. No errors found\n");
-
-        // Interpreter
-        Interpreter interpreter = new Interpreter(analyzer.getSymbolTable());
-        interpreter.execute(program);
     }
 }
