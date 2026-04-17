@@ -78,8 +78,8 @@ public class Parser {
 
     // DECLARE INT x, y, z=5
     private List<Node> parseDeclaration() {
-        expect(TokenType.DECLARE);
-        String type = consume().value; // INT, FLOAT, CHAR, BOOL
+        Token t = expect(TokenType.DECLARE);
+        String type = consume().value;
 
         List<Node> nodes = new ArrayList<>();
 
@@ -89,7 +89,9 @@ public class Parser {
             if (match(TokenType.ASSIGN)) {
                 value = parseExpression();
             }
-            nodes.add(new DeclareNode(type, name, value));
+            DeclareNode node = new DeclareNode(type, name, value);
+            node.line = t.line;
+            nodes.add(node);
         } while (match(TokenType.COMMA));
 
         return nodes;
@@ -115,24 +117,28 @@ public class Parser {
 
     // x = 5   or   x = y = 4  (chained assignment)
     private Node parseAssignment() {
-        String name = expect(TokenType.IDENTIFIER).value;
+        Token t = expect(TokenType.IDENTIFIER);
         expect(TokenType.ASSIGN);
 
-        // peek if this is a chained assignment: x = y = 4
+        AssignNode node;
+
         if (check(TokenType.IDENTIFIER) && peek(1).type == TokenType.ASSIGN) {
-            Node right = parseAssignment(); // recurse
-            return new AssignNode(name, right);
+            Node right = parseAssignment();
+            node = new AssignNode(t.value, right);
+        } else {
+            Node value = parseExpression();
+            node = new AssignNode(t.value, value);
         }
 
-        Node value = parseExpression();
-        return new AssignNode(name, value);
+        node.line = t.line;
+        return node;
     }
 
     // Print /////////////////////////////////////////////////////////////////////////////////////////////
 
     // PRINT: x & t & z & $ & a_1 & [#] & "last"
     private Node parsePrint() {
-        expect(TokenType.PRINT);
+        Token t = expect(TokenType.PRINT);
         expect(TokenType.COLON);
 
         List<Node> parts = new ArrayList<>();
@@ -142,7 +148,9 @@ public class Parser {
             parts.add(parsePrintPart());
         }
 
-        return new PrintNode(parts);
+        PrintNode node = new PrintNode(parts);
+        node.line = t.line;
+        return node;
     }
 
     private Node parsePrintPart() {
@@ -186,14 +194,15 @@ public class Parser {
     // If ////////////////////////////////////////////////////////////////////////////////////////////////
 
     private Node parseIf() {
-        expect(TokenType.IF);
+        Token t = expect(TokenType.IF);
         expect(TokenType.LPAREN);
         Node condition = parseExpression();
         expect(TokenType.RPAREN);
         expect(TokenType.START_IF);
 
         List<Node> thenBranch = new ArrayList<>();
-        while (!check(TokenType.END_IF) && !check(TokenType.ELSE) && !check(TokenType.ELSE_IF) && !check(TokenType.EOF)) {
+        while (!check(TokenType.END_IF) && !check(TokenType.ELSE)
+                && !check(TokenType.ELSE_IF) && !check(TokenType.EOF)) {
             thenBranch.add(parseStatement());
         }
         expect(TokenType.END_IF);
@@ -202,18 +211,22 @@ public class Parser {
         List<Node>   elseBranch     = null;
 
         while (check(TokenType.ELSE_IF)) {
-            consume();
+            Token elseIfToken = consume();
             expect(TokenType.LPAREN);
             Node elseIfCond = parseExpression();
             expect(TokenType.RPAREN);
             expect(TokenType.START_IF);
 
             List<Node> elseIfBody = new ArrayList<>();
-            while (!check(TokenType.END_IF) && !check(TokenType.ELSE) && !check(TokenType.ELSE_IF) && !check(TokenType.EOF)) {
+            while (!check(TokenType.END_IF) && !check(TokenType.ELSE)
+                    && !check(TokenType.ELSE_IF) && !check(TokenType.EOF)) {
                 elseIfBody.add(parseStatement());
             }
             expect(TokenType.END_IF);
-            elseIfBranches.add(new IfNode(elseIfCond, elseIfBody, new ArrayList<>(), null));
+
+            IfNode elseIfNode = new IfNode(elseIfCond, elseIfBody, new ArrayList<>(), null);
+            elseIfNode.line = elseIfToken.line;
+            elseIfBranches.add(elseIfNode);
         }
 
         if (match(TokenType.ELSE)) {
@@ -225,14 +238,16 @@ public class Parser {
             expect(TokenType.END_IF);
         }
 
-        return new IfNode(condition, thenBranch, elseIfBranches, elseBranch);
+        IfNode node = new IfNode(condition, thenBranch, elseIfBranches, elseBranch);
+        node.line = t.line;
+        return node;
     }
 
     // For loop /////////////////////////////////////////////////////////////////////////////////////
 
     //                                     FOR (init, cond, update)
     private Node parseFor() {
-        expect(TokenType.FOR);
+        Token t = expect(TokenType.FOR);
         expect(TokenType.LPAREN);
         Node init = parseAssignment();
         expect(TokenType.COMMA);
@@ -248,14 +263,16 @@ public class Parser {
         }
         expect(TokenType.END_FOR);
 
-        return new ForNode(init, condition, update, body);
+        ForNode node = new ForNode(init, condition, update, body);
+        node.line = t.line;
+        return node;
     }
 
     // Repeat ///////////////////////////////////////////////////////////////////////////////////////////
 
     //                                     REPEAT WHEN (<BOOL expression> or condition)
     private Node parseRepeat() {
-        expect(TokenType.REPEAT_WHEN);
+        Token t = expect(TokenType.REPEAT_WHEN);
         expect(TokenType.LPAREN);
         Node condition = parseExpression();
         expect(TokenType.RPAREN);
@@ -267,7 +284,9 @@ public class Parser {
         }
         expect(TokenType.END_REPEAT);
 
-        return new RepeatNode(condition, body);
+        RepeatNode node = new RepeatNode(condition, body);
+        node.line = t.line;
+        return node;
     }
 
     // Expressions (with precedence) ///////////////////////////////////////////////////////////////////////
