@@ -6,9 +6,9 @@ public class SymbolTable {
     private final Map<String, String> types  = new HashMap<>(); // name -> dataType   INT, FLOAT, CHAR, STRING, BOOL
     private final Map<String, Object> values = new HashMap<>(); // name -> value     used Object coz value could be of any data type
 
-    public void declare(String name, String type, Object value) {
+    public void declare(String name, String type, int line, Object value) {
         if (types.containsKey(name)) {
-            throw new RuntimeException("Variable '" + name + "' is already declared.");
+            throw new LexorException(LexorException.Phase.SEMANTIC, line, "Variable '" + name + "' is already declared.");
         }
         types.put(name, type);
         values.put(name, value);

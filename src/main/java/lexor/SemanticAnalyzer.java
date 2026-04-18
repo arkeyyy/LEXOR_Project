@@ -39,7 +39,7 @@ public class SemanticAnalyzer {
             String valueType = inferType(node.value);
             checkTypeMatch(node.type, valueType, "Declaration of '" + node.name + "'", node.line);
         }
-        symbolTable.declare(node.name, node.type, defaultValue);
+        symbolTable.declare(node.name, node.type, node.line, defaultValue);
     }
 
     private Object getDefault(String type) {
