@@ -27,13 +27,15 @@ public class Main {
         // sample code to test if the Phases work adhfiubwasgowruie
        String source = """
                    SCRIPT AREA
-                       START SCRIPT
-                             DECLARE FLOAT a, b, c
-                                              a = 3.14
-                                              b = 2.0
-                                              c = a + b
-                                              PRINT: a & $ & b & $ & c
-                       END SCRIPT
+                        START SCRIPT
+                            DECLARE INT x, y, z, a
+                            PRINT: "Enter a number: "
+                                SCAN: a
+                                x = y = z = a
+                                PRINT: "x = " & x & $
+                                PRINT: "y = " & y & $
+                                PRINT: "z = " & z & $
+                        END SCRIPT
                """;
 
         try {

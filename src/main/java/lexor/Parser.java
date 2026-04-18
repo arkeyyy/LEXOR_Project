@@ -179,7 +179,7 @@ public class Parser {
 
     // SCAN: x, y
     private Node parseScan() {
-        expect(TokenType.SCAN);
+        Token t = expect(TokenType.SCAN);
         expect(TokenType.COLON);
 
         List<String> vars = new ArrayList<>();
@@ -188,7 +188,9 @@ public class Parser {
             vars.add(expect(TokenType.IDENTIFIER).value);
         }
 
-        return new ScanNode(vars);
+        ScanNode node = new ScanNode(vars);
+        node.line = t.line;
+        return node;
     }
 
     // If ////////////////////////////////////////////////////////////////////////////////////////////////

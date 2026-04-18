@@ -100,19 +100,26 @@ public class Interpreter {
 
     private void executeScan(ScanNode node) {
         String[] inputs = scanner.nextLine().split(",");
+        Object value;
 
         for (int i = 0; i < node.variables.size(); i++) {
             String varName = node.variables.get(i);
-            String varType = symbolTable.getType(varName);
+            String variableType = symbolTable.getType(varName);
             String raw     = inputs[i].trim();
 
-            Object value = switch (varType) {
-                case "INT"   -> Integer.parseInt(raw);
-                case "FLOAT" -> Float.parseFloat(raw);
-                case "CHAR"  -> raw.charAt(0);
-                case "BOOL"  -> raw.equalsIgnoreCase("TRUE");
-                default      -> raw;
-            };
+            try {
+                value = switch (variableType) {
+                    case "INT" -> Integer.parseInt(raw);
+                    case "FLOAT" -> Float.parseFloat(raw);
+                    case "CHAR" -> raw.charAt(0);
+                    case "BOOL" -> raw.equalsIgnoreCase("TRUE");
+                    default -> raw;
+                };
+            } catch (NumberFormatException e) {
+                throw new LexorException(LexorException.Phase.RUNTIME, currentLine,
+                        "Invalid input '" + raw + "' for variable '" + varName + "' of type '" + variableType + "'");
+            }
+
 
             symbolTable.setValue(varName, value);
         }
