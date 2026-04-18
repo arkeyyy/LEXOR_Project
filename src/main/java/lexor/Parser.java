@@ -23,9 +23,9 @@ public class Parser {
         return tokens.get(pos++);
     }
 
-    private Token peek(int offset) {
-        int index = pos + offset;
-        if (index >= tokens.size()) return tokens.get(tokens.size() - 1); // EOF
+    private Token peek() {
+        int index = pos + 1;
+        if (index >= tokens.size()) return tokens.getLast(); // EOF
         return tokens.get(index);
     }
 
@@ -122,7 +122,7 @@ public class Parser {
 
         AssignNode node;
 
-        if (check(TokenType.IDENTIFIER) && peek(1).type == TokenType.ASSIGN) {
+        if (check(TokenType.IDENTIFIER) && peek().type == TokenType.ASSIGN) {
             Node right = parseAssignment();
             node = new AssignNode(t.value, right);
         } else {

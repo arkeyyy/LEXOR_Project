@@ -87,7 +87,7 @@ public class Interpreter {
         if (value instanceof Float f) {
             // If the float has no fractional part, print as integer (e.g. 2.0 not 2.0000)
             if (f == Math.floor(f) && !Float.isInfinite(f)) {
-                return String.valueOf(f.intValue()) + ".0";
+                return f.intValue() + ".0";
             }
             // Strip trailing zeros (e.g. 3.14000 -> 3.14)
             // return String.valueOf(f).replaceAll("0+$", "").replaceAll("\\.$", ".0");
