@@ -3,10 +3,12 @@ package lexor;
 import lexor.nodes.*;
 import java.util.List;
 import java.util.Scanner;
+import java.text.DecimalFormat;
 
 public class Interpreter {
     private final SymbolTable symbolTable;
     private final Scanner scanner = new Scanner(System.in);
+    private final DecimalFormat df = new DecimalFormat("0.00");   // kapoy float issue
     private int currentLine = 0;
 
     public Interpreter(SymbolTable symbolTable) {
@@ -83,12 +85,13 @@ public class Interpreter {
         if (value instanceof Boolean b)                return b ? "TRUE" : "FALSE";
         if (value instanceof Character c && c == '\0') return "";
         if (value instanceof Float f) {
-            // If the float has no fractional part, print as integer (2.0 and not 2.0000)
+            // If the float has no fractional part, print as integer (e.g. 2.0 not 2.0000)
             if (f == Math.floor(f) && !Float.isInfinite(f)) {
                 return String.valueOf(f.intValue()) + ".0";
             }
-            // Strip trailing zeros (3.14000 -> 3.14) (30.054000 -> 30.054)
-            return String.valueOf(f).replaceAll("0+$", "").replaceAll("\\.$", ".0");
+            // Strip trailing zeros (e.g. 3.14000 -> 3.14)
+            // return String.valueOf(f).replaceAll("0+$", "").replaceAll("\\.$", ".0");
+            return df.format(f);  // ahahahaha ezzzzz
         }
         return String.valueOf(value);
     }
