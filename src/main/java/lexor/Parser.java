@@ -67,6 +67,12 @@ public class Parser {
 
         expect(TokenType.END_SCRIPT);
 
+        if (!check(TokenType.EOF)) {
+            throw new LexorException(LexorException.Phase.PARSER, current().line,
+                    "Unexpected token after END SCRIPT"
+            );
+        }
+
         List<Node> all = new ArrayList<>();
         all.addAll(declarations);
         all.addAll(statements);
