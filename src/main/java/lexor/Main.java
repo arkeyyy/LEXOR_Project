@@ -1,7 +1,4 @@
 package lexor;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 import lexor.nodes.Node;
@@ -10,33 +7,16 @@ import lexor.nodes.ProgramNode;
 public class Main {
     public static void main(String[] args) {
 
-         if (args.length == 0) {
-             System.err.println("Usage: java -jar lexor.jar <file.lxr>");
-             System.exit(1);
-         }
-
-         String code;
-         try {
-             code = Files.readString(Path.of(args[0]));
-         } catch (IOException e) {
-             System.err.println("Error: Could not read file '" + args[0] + "'.");
-             System.exit(1);
-             return;
-         }
-
-        // sample code to test if the Phases work adhfiubwasgowruie
-       String source = """
-                   SCRIPT AREA
+        // sample code to test if the Phases work
+        String source = """
+                SCRIPT AREA
                         START SCRIPT
-                               DECLARE INT x, y, z, a
-                               PRINT: "Enter a number: "
-                               SCAN: a
-                               x = y = z = a
-                               PRINT: "x = " & x & $
-                               PRINT: "y = " & y & $
-                               PRINT: "z = " & z & $
+                        DECLARE BOOL x
+                        PRINT: "Enter bool: "
+                        SCAN: x
+                        PRINT: x
                         END SCRIPT
-               """;
+        """;
 
         try {
             // Lexer
@@ -61,7 +41,7 @@ public class Main {
             // Semantic Analysis
             SemanticAnalyzer analyzer = new SemanticAnalyzer();
             analyzer.analyze(program);
-            System.out.println("Semantic analysis passed. No errors found\n");
+            System.out.println("Semantic analysis passed. No errors found\n\n\n");
 
             // Interpreter
             Interpreter interpreter = new Interpreter(analyzer.getSymbolTable());

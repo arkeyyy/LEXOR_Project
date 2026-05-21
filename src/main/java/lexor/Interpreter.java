@@ -1,9 +1,22 @@
 package lexor;
 
-import lexor.nodes.*;
+import java.text.DecimalFormat;
 import java.util.List;
 import java.util.Scanner;
-import java.text.DecimalFormat;
+
+import lexor.nodes.AssignNode;
+import lexor.nodes.BinaryOpNode;
+import lexor.nodes.DeclareNode;
+import lexor.nodes.ForNode;
+import lexor.nodes.IfNode;
+import lexor.nodes.LiteralNode;
+import lexor.nodes.Node;
+import lexor.nodes.PrintNode;
+import lexor.nodes.ProgramNode;
+import lexor.nodes.RepeatNode;
+import lexor.nodes.ScanNode;
+import lexor.nodes.UnaryOpNode;
+import lexor.nodes.VariableNode;
 
 public class Interpreter {
     private final SymbolTable symbolTable;
@@ -112,7 +125,23 @@ public class Interpreter {
                     case "INT" -> Integer.parseInt(raw);
                     case "FLOAT" -> Float.parseFloat(raw);
                     case "CHAR" -> raw.charAt(0);
-                    case "BOOL" -> raw.equalsIgnoreCase("TRUE");
+                    case "BOOL" -> {
+                        if (raw.equals("TRUE")) {
+                            yield true;
+                        } else if (raw.equals("FALSE")) {
+                            yield false;
+                        } else {
+                            if (raw.equalsIgnoreCase("TRUE")){
+                                throw new LexorException(LexorException.Phase.RUNTIME, currentLine,
+                                        "Invalid boolean input: " + raw + ". Did you mean \"TRUE\"?");
+                            } else if (raw.equalsIgnoreCase("FALSE")) {
+                                throw new LexorException(LexorException.Phase.RUNTIME, currentLine,
+                                        "Invalid boolean input: " + raw + ". Did you mean \"FALSE\"?");
+                            }
+
+                            throw new LexorException(LexorException.Phase.RUNTIME, currentLine, "Invalid boolean input: " + raw);
+                        }
+                    }
                     default -> raw;
                 };
             } catch (NumberFormatException e) {
