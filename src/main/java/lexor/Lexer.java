@@ -205,8 +205,20 @@ public class Lexer {
             case ',' -> { tokens.add(new Token(TokenType.COMMA,     ",", line)); pos++; }
             case '(' -> { tokens.add(new Token(TokenType.LPAREN,    "(", line)); pos++; }
             case ')' -> { tokens.add(new Token(TokenType.RPAREN,    ")", line)); pos++; }
-            case '+' -> { tokens.add(new Token(TokenType.PLUS,      "+", line)); pos++; }
-            case '-' -> { tokens.add(new Token(TokenType.MINUS,     "-", line)); pos++; }
+            case '+' -> {
+                            if (pos + 1 < source.length() && source.charAt(pos + 1) == '+') {
+                                tokens.add(new Token(TokenType.INCREMENT, "++", line)); pos += 2;
+                            } else {
+                                tokens.add(new Token(TokenType.PLUS, "+", line)); pos++;
+                            }
+                        }
+            case '-' -> {
+                            if (pos + 1 < source.length() && source.charAt(pos + 1) == '-') {
+                                tokens.add(new Token(TokenType.DECREMENT, "--", line)); pos += 2;
+                            } else {
+                                tokens.add(new Token(TokenType.MINUS, "-", line)); pos++;
+                            }
+                        }
             case '*' -> { tokens.add(new Token(TokenType.MULTIPLY,  "*", line)); pos++; }
             case '/' -> { tokens.add(new Token(TokenType.DIVIDE,    "/", line)); pos++; }
             case '%' -> { tokens.add(new Token(TokenType.MODULO,    "%", line)); pos++; }

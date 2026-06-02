@@ -107,14 +107,22 @@ public class Parser {
 
     private Node parseStatement() {
         return switch (current().type) {
-            case IDENTIFIER -> parseAssignment();
-            case PRINT      -> parsePrint();
-            case SCAN       -> parseScan();
-            case IF         -> parseIf();
-            case FOR        -> parseFor();
+            case IDENTIFIER -> {
+                // post-increment/decrement as standalone statement
+                if (peek().type == TokenType.INCREMENT || peek().type == TokenType.DECREMENT) {
+                    yield parsePrimary();
+                }
+                yield parseAssignment();
+            }
+            // pre-increment/decrement as standalone statement
+            case INCREMENT, DECREMENT -> parseUnary();
+            case PRINT       -> parsePrint();
+            case SCAN        -> parseScan();
+            case IF          -> parseIf();
+            case FOR         -> parseFor();
             case REPEAT_WHEN -> parseRepeat();
-            default -> throw new LexorException(
-                    LexorException.Phase.PARSER, current().line, "Unexpected token '" + current().value + "'."
+            default -> throw new LexorException(LexorException.Phase.PARSER, current().line,
+                    "Unexpected token '" + current().value + "'."
             );
         };
     }
@@ -359,6 +367,20 @@ public class Parser {
     }
 
     private Node parseUnary() {
+        if (check(TokenType.INCREMENT)) {
+            Token t = consume();
+            String name = expect(TokenType.IDENTIFIER).value;
+            IncDecNode node = new IncDecNode(name, true, true);
+            node.line = t.line;
+            return node;
+        }
+        if (check(TokenType.DECREMENT)) {
+            Token t = consume();
+            String name = expect(TokenType.IDENTIFIER).value;
+            IncDecNode node = new IncDecNode(name, false, true);
+            node.line = t.line;
+            return node;
+        }
         if (check(TokenType.MINUS) || check(TokenType.PLUS)) {
             String op = consume().value;
             return new UnaryOpNode(op, parseUnary());
@@ -378,7 +400,23 @@ public class Parser {
             case CHAR_LITERAL   -> { consume(); return new LiteralNode(t.value.charAt(0),           "CHAR");   }
             case BOOL_LITERAL   -> { consume(); return new LiteralNode(t.value.equals("TRUE"),      "BOOL");   }
             case STRING_LITERAL -> { consume(); return new LiteralNode(t.value,                     "STRING"); }
-            case IDENTIFIER     -> { consume(); return new VariableNode(t.value); }
+            case IDENTIFIER -> {
+                // Token t = current();
+                String name = consume().value;
+                if (check(TokenType.INCREMENT)) {
+                    consume();
+                    IncDecNode node = new IncDecNode(name, true, false);
+                    node.line = t.line;
+                    return node;
+                }
+                if (check(TokenType.DECREMENT)) {
+                    consume();
+                    IncDecNode node = new IncDecNode(name, false, false);
+                    node.line = t.line;
+                    return node;
+                }
+                return new VariableNode(name);
+            }
             case LPAREN -> {
                 consume();
                 Node expr = parseExpression();

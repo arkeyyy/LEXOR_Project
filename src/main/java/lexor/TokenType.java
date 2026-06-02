@@ -29,5 +29,8 @@ public enum TokenType {
     COMMENT,                           // comment %%
     IDENTIFIER,                        // variables
     ASSIGN,                            // assignment operators
-    EOF                                // end of file (sentinel token to check if we are at the end of the file)
+    EOF,                                // end of file (sentinel token to check if we are at the end of the file)
+
+    INCREMENT,  // ++
+    DECREMENT,  // --
 }

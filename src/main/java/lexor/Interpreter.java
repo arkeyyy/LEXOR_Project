@@ -4,19 +4,7 @@ import java.text.DecimalFormat;
 import java.util.List;
 import java.util.Scanner;
 
-import lexor.nodes.AssignNode;
-import lexor.nodes.BinaryOpNode;
-import lexor.nodes.DeclareNode;
-import lexor.nodes.ForNode;
-import lexor.nodes.IfNode;
-import lexor.nodes.LiteralNode;
-import lexor.nodes.Node;
-import lexor.nodes.PrintNode;
-import lexor.nodes.ProgramNode;
-import lexor.nodes.RepeatNode;
-import lexor.nodes.ScanNode;
-import lexor.nodes.UnaryOpNode;
-import lexor.nodes.VariableNode;
+import lexor.nodes.*;
 
 public class Interpreter {
     private final SymbolTable symbolTable;
@@ -48,6 +36,7 @@ public class Interpreter {
             case IfNode      n -> executeIf(n);
             case ForNode     n -> executeFor(n);
             case RepeatNode  n -> executeRepeat(n);
+            case IncDecNode n -> evaluateIncDec(n);
             default -> throw new LexorException(
                     LexorException.Phase.RUNTIME, currentLine, "Unknown node: " + node.getClass().getSimpleName()
             );
@@ -210,6 +199,7 @@ public class Interpreter {
             case AssignNode   n -> { executeAssign(n); yield symbolTable.getValue(n.name); }
             case BinaryOpNode n -> evaluateBinary(n);
             case UnaryOpNode  n -> evaluateUnary(n);
+            case IncDecNode n -> evaluateIncDec(n);
             default -> throw new LexorException(
                     LexorException.Phase.RUNTIME, currentLine, "Cannot evaluate node: " + node.getClass().getSimpleName()
             );
@@ -315,6 +305,37 @@ public class Interpreter {
         if (value instanceof Integer i) return i.floatValue();
         throw new LexorException(
                 LexorException.Phase.RUNTIME, currentLine, "Cannot convert to FLOAT: " + value
+        );
+    }
+
+    private Object evaluateIncDec(IncDecNode node) {
+        Object current = symbolTable.getValue(node.name);
+        Object newValue = node.isIncrement ? increment(current) : decrement(current);
+
+        if (node.isPrefix) {
+            // ++x / --x: update first, return new value
+            symbolTable.setValue(node.name, newValue);
+            return newValue;
+        } else {
+            // x++ / x--: return old value, then update
+            symbolTable.setValue(node.name, newValue);
+            return current;
+        }
+    }
+
+    private Object increment(Object value) {
+        if (value instanceof Integer i) return i + 1;
+        if (value instanceof Float   f) return f + 1.0f;
+        throw new LexorException(LexorException.Phase.RUNTIME, currentLine,
+                "Cannot increment non-numeric value."
+        );
+    }
+
+    private Object decrement(Object value) {
+        if (value instanceof Integer i) return i - 1;
+        if (value instanceof Float   f) return f - 1.0f;
+        throw new LexorException(LexorException.Phase.RUNTIME, currentLine,
+                "Cannot decrement non-numeric value."
         );
     }
 }

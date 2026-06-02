@@ -25,6 +25,7 @@ public class SemanticAnalyzer {
             case IfNode        n -> analyzeIf(n);
             case ForNode       n -> analyzeFor(n);
             case RepeatNode    n -> analyzeRepeat(n);
+            case IncDecNode    n -> analyzeIncDec(n);
             default -> throw new LexorException(
                     LexorException.Phase.SEMANTIC, node.line, "Unknown node type: " + node.getClass().getSimpleName()
             );
@@ -135,6 +136,10 @@ public class SemanticAnalyzer {
                 analyzeAssign(n);
                 yield symbolTable.getType(n.name);
             }
+            case IncDecNode n -> {
+                analyzeIncDec(n);
+                yield symbolTable.getType(n.name);
+            }
             default -> throw new LexorException(
                     LexorException.Phase.SEMANTIC, node.line, "Cannot infer type of: " + node.getClass().getSimpleName()
             );
@@ -198,6 +203,20 @@ public class SemanticAnalyzer {
         if (!expected.equals(actual)) {
             throw new LexorException(
                     LexorException.Phase.SEMANTIC, line, context + ": type mismatch — expected " + expected + ", got " + actual + "."
+            );
+        }
+    }
+
+    private void analyzeIncDec(IncDecNode node) {
+        if (!symbolTable.isDeclared(node.name)) {
+            throw new LexorException(LexorException.Phase.SEMANTIC, node.line,
+                    "Undeclared variable '" + node.name + "'."
+            );
+        }
+        String type = symbolTable.getType(node.name);
+        if (!type.equals("INT") && !type.equals("FLOAT")) {
+            throw new LexorException(LexorException.Phase.SEMANTIC, node.line,
+                    "Increment/decrement requires INT or FLOAT, got " + type + "."
             );
         }
     }
