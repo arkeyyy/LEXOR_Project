@@ -9,26 +9,16 @@ public class Main {
 
         // sample code to test if the Phases work
         String source = """
+
+                
                 SCRIPT AREA
-                        START SCRIPT
-                            DECLARE INT a, b, c, d
-                
-                            a = 5
-                            b = 5
-                
-                            c = ++a
-                            PRINT: "pre-increment a: " & a & $
-                            PRINT: "c = ++a:         " & c & $ & $
-                
-                            d = b++
-                            PRINT: "post-increment b: " & b & $
-                            PRINT: "d = b++:          " & d & $ & $
-                
-                            ++a
-                            b--
-                            PRINT: "standalone ++a: " & a & $
-                            PRINT: "standalone b--: " & b & $
-                        END SCRIPT
+                START SCRIPT
+                DECLARE FLOAT pie = 3
+                DECLARE INT x\s
+                SCAN: x
+                PRINT: pie + x
+                END SCRIPT
+
         """;
 
         try {

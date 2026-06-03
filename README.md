@@ -13,26 +13,49 @@
 <br>
 
 <div align="center">
-  <b>Lexor</b> is a custom scripting language interpreter developed in Java for the Programming Languages course.
+  <b>Lexor</b> is a custom scripting language interpreter built in Java for the Programming Languages course.
 </div>
 
 ---
 
+## 📌 Overview
 
-## 🚀 Features
+**Lexor** is a custom scripting language designed to demonstrate the basic concepts of programming language design and interpretation.
 
-The **Lexor** syntax is designed to be intuitive and heavily structured using standard block terminators.
+The project allows users to write and run `.lxr` scripts using a simple structured syntax. It supports variables, arithmetic operations, input and output, conditional statements, and loop structures.
 
-*   <strong style="color:#D8224A">Custom Lexical Analysis:</strong> Parses custom `.lxr` syntax files.
-*   <strong style="color:#A96045">Control Structures:</strong> Supports nested loops (`FOR`) and explicit conditional blocks (`IF` / `ELSE`).
-*   <strong style="color:#D8224A">Mathematical Operations:</strong> Handles arithmetic with order of operations and modulo (`%`).
-*   <strong style="color:#A96045">I/O Methods:</strong> Integrated `PRINT` and `SCAN` keywords for console interaction.
+Lexor was developed to show how a programming language can be processed through lexical analysis, syntax handling, and execution using Java.
 
 ---
 
-## 💻 Sample Code
+## 🚀 Features
 
-Here is an example of what **Lexor** looks like in action. This script takes an integer input and dynamically prints a patterned diamond to the console!
+- **Custom Lexical Analysis**  
+  Reads and processes Lexor source code from `.lxr` files.
+
+- **Variable Declaration and Assignment**  
+  Supports integer variables and value assignment.
+
+- **Arithmetic Operations**  
+  Handles basic mathematical operations such as addition, subtraction, multiplication, division, and modulo.
+
+- **Conditional Statements**  
+  Supports structured `IF` and `ELSE` blocks.
+
+- **Looping Structures**  
+  Supports `FOR` loops, including nested loops.
+
+- **Console Input and Output**  
+  Uses `SCAN` for user input and `PRINT` for console output.
+
+- **Structured Block Syntax**  
+  Uses clear block markers such as `START SCRIPT`, `END SCRIPT`, `START IF`, `END IF`, `START FOR`, and `END FOR`.
+
+---
+
+## 💻 Sample Lexor Code
+
+The sample below asks the user for an integer input and prints a diamond-like pattern in the console.
 
 ```text
 SCRIPT AREA
@@ -43,25 +66,25 @@ SCRIPT AREA
 
         IF (x % 2 == 0)
             START IF
-                mid = x/2
+                mid = x / 2
             END IF
         ELSE
             START IF
-                mid = (x/2) + 1
+                mid = (x / 2) + 1
             END IF
 
-        space = mid-1
+        space = mid - 1
         w = 1
 
-        FOR (i=1, i <= x, i=i+1)
+        FOR (i = 1, i <= x, i = i + 1)
             START FOR
 
-                FOR (j = 1, j <= space, j=j+1)
+                FOR (j = 1, j <= space, j = j + 1)
                     START FOR
                         PRINT: ' '
                     END FOR
 
-                FOR (j = 1, j <= w, j=j+1)
+                FOR (j = 1, j <= w, j = j + 1)
                     START FOR
                         IF (i == mid AND j == mid)
                             START IF
@@ -75,19 +98,15 @@ SCRIPT AREA
 
                 IF (i < mid)
                     START IF
-                        space = space-1
-                        w = w+2
+                        space = space - 1
+                        w = w + 2
                     END IF
                 ELSE
                     START IF
-                        space = space+1
-                        w = w-2
+                        space = space + 1
+                        w = w - 2
                     END IF
-            PRINT: $
+
+                PRINT: $
             END FOR
     END SCRIPT
-```
-
-<div align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=D8224A&height=100&section=footer" />
-</div>
