@@ -46,9 +46,12 @@ public class Interpreter {
     // Declare /////////////////////////////////////////////////////////////////////////////////
 
     private void executeDeclare(DeclareNode node) {
-        Object value = node.value != null
-                ? evaluate(node.value)
-                : getDefault(node.type);
+        Object value = node.value != null ? evaluate(node.value) : getDefault(node.type);
+
+        if (node.type.equals("FLOAT") && value instanceof Integer i) {
+            value = i.floatValue();
+        }
+
         symbolTable.setValue(node.name, value);
     }
 

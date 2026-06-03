@@ -269,7 +269,7 @@ public class Parser {
         expect(TokenType.COMMA);
         Node condition = parseExpression();
         expect(TokenType.COMMA);
-        Node update = parseAssignment();
+        Node update = parseForUpdate();
         expect(TokenType.RPAREN);
         expect(TokenType.START_FOR);
 
@@ -282,6 +282,18 @@ public class Parser {
         ForNode node = new ForNode(init, condition, update, body);
         node.line = t.line;
         return node;
+    }
+
+    private Node parseForUpdate() {
+
+        if (check(TokenType.INCREMENT) || check(TokenType.DECREMENT)){  // pre
+            return parseUnary();
+        }
+        if (check(TokenType.IDENTIFIER) &&
+                (peek().type == TokenType.INCREMENT || peek().type == TokenType.DECREMENT)){  // post
+            return parsePrimary();
+        }
+        return parseAssignment();  // assignment update like i=i+1
     }
 
     // Repeat ///////////////////////////////////////////////////////////////////////////////////////////
