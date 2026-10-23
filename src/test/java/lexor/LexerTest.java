@@ -135,8 +135,8 @@ public class LexerTest {
     @Test
     void testCommentIsSkipped() {
         List<Token> tokens = tokenize("%% this is a comment\nDECLARE");
-        // comment is skipped, first real token should be DECLARE
-        assertEquals(TokenType.DECLARE, tokens.getFirst().type);
+        assertEquals(TokenType.NEWLINE, tokens.getFirst().type);
+        assertEquals(TokenType.DECLARE, tokens.get(1).type);
     }
 
     // ── Identifier Tests ──────────────────────────────────────
@@ -161,7 +161,9 @@ public class LexerTest {
     void testLineNumberTracking() {
         List<Token> tokens = tokenize("DECLARE\nPRINT");
         assertEquals(1, tokens.get(0).line);
-        assertEquals(2, tokens.get(1).line);
+        assertEquals(TokenType.NEWLINE, tokens.get(1).type);
+        assertEquals(1, tokens.get(1).line);
+        assertEquals(2, tokens.get(2).line);
     }
 
     // ── EOF Tests ─────────────────────────────────────────────

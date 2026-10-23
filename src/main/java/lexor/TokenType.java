@@ -9,6 +9,7 @@ public enum TokenType {
 
     // Keywords
     SCRIPT_AREA, START_SCRIPT, END_SCRIPT,
+    SCRIPT, AREA, START, END, REPEAT, WHEN,
     DECLARE, PRINT, SCAN,
     IF, ELSE, ELSE_IF, START_IF, END_IF,
     FOR, START_FOR, END_FOR,
@@ -29,7 +30,7 @@ public enum TokenType {
     COMMENT,                           // comment %%
     IDENTIFIER,                        // variables
     ASSIGN,                            // assignment operators
-    EOF,                                // end of file (sentinel token to check if we are at the end of the file)
+    NEWLINE, EOF,
 
     INCREMENT,  // ++
     DECREMENT,  // --

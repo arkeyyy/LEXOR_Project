@@ -38,7 +38,7 @@ public class ParserTest {
         assertInstanceOf(DeclareNode.class, program.statements.getFirst());
 
         DeclareNode node = (DeclareNode) program.statements.getFirst();
-        assertEquals("INT", node.type);
+        assertEquals(ValueType.INT, node.type);
         assertEquals("x",   node.name);
         assertNull(node.value);
     }
@@ -57,7 +57,7 @@ public class ParserTest {
 
         LiteralNode literal = (LiteralNode) node.value;
         assertEquals(5,     literal.value);
-        assertEquals("INT", literal.type);
+        assertEquals(ValueType.INT, literal.type);
     }
 
     @Test

@@ -9,7 +9,8 @@ public class ForNode extends Node{
     public final Node update;
     public final List<Node> body;
 
-    public ForNode(Node initialization, Node condition, Node update, List<Node> body) {
+    public ForNode(int line, Node initialization, Node condition, Node update, List<Node> body) {
+        super(line);
         this.initialization = initialization;
         this.condition = condition;
         this.update = update;

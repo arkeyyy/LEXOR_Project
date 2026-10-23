@@ -28,13 +28,57 @@ Lexor was developed to show how a programming language can be processed and exec
 
 ---
 
+## Build and run
+
+Install JDK 23 or later and set `JAVA_HOME` to that installation. The Maven Wrapper downloads Maven 3.9.11 and the required build dependencies on its first run.
+
+On Windows:
+
+```powershell
+.\mvnw.cmd verify
+java -jar target/Lexor_Project-1.0-SNAPSHOT.jar myprogram.lxr
+```
+
+On macOS or Linux:
+
+```sh
+sh mvnw verify
+java -jar target/Lexor_Project-1.0-SNAPSHOT.jar myprogram.lxr
+```
+
+Quote script paths containing spaces. Source files use UTF-8. `SCAN` reads comma-separated values from standard input.
+
+```powershell
+java -jar target/Lexor_Project-1.0-SNAPSHOT.jar "examples/specification-sample.lxr"
+java -jar target/Lexor_Project-1.0-SNAPSHOT.jar --debug "examples/inc-dec.lxr"
+java -jar target/Lexor_Project-1.0-SNAPSHOT.jar --help
+```
+
+Normal execution writes only the script's output to stdout. Errors and optional `--debug` traces go to stderr. Exit codes are `0` for success/help, `1` for language or execution errors, and `2` for invalid arguments or unreadable files.
+
+The [language specification](Language%20Specification%20of%20LEXOR.md) includes implementation clarifications. Runnable versions of its examples are in [`examples/`](examples/). The original increment/decrement demo is preserved in [`examples/inc-dec.lxr`](examples/inc-dec.lxr).
+
+### Language behavior
+
+- Put each statement, header, and block marker on its own line. Blank lines and `%%` comments are allowed.
+- Use ASCII `'` and `"` quote delimiters. Strings are printable literals; declared variables use `INT`, `FLOAT`, `CHAR`, or `BOOL`.
+- Numeric assignments allow `INT` to `FLOAT` promotion. Integer arithmetic is checked for overflow; FLOAT values use 32-bit precision.
+- Division or modulo by zero, overflow, and non-finite FLOAT values produce source-positioned errors.
+- `AND` and `OR` short-circuit at runtime. Both operands must still pass semantic checks.
+- Mixed INT/FLOAT comparisons are supported. BOOL and CHAR support same-type equality/inequality, but not ordering.
+- `++` and `--` are supported extensions. Prefix returns the updated value; postfix returns the previous value.
+- `SCAN` requires exactly one field per target. Invalid input leaves every target unchanged. CHAR input must contain exactly one character, including a single space.
+- FLOAT output uses locale-independent decimal notation and may use scientific notation for very large or small values.
+
+---
+
 ## 🚀 Features
 
 - **Custom Lexical Analysis**  
   Reads and processes Lexor source code from `.lxr` files.
 
 - **Variable Declaration and Assignment**  
-  Supports integer variables and basic value assignment.
+  Supports INT, FLOAT, CHAR, and BOOL variables, checked assignments, and chained assignments.
 
 - **Arithmetic Operations**  
   Handles addition, subtraction, multiplication, division, and modulo.
@@ -74,7 +118,7 @@ SCRIPT AREA
 
 ### 2. Declare Variables
 
-Use `DECLARE INT` to create integer variables.
+Use `DECLARE INT`, `DECLARE FLOAT`, `DECLARE CHAR`, or `DECLARE BOOL` immediately after `START SCRIPT` to declare variables.
 
 ```text
 DECLARE INT x

@@ -1,344 +1,284 @@
 package lexor;
 
-import java.text.DecimalFormat;
+import java.io.InputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
 import lexor.nodes.*;
 
+import static lexor.LexorException.Phase.RUNTIME;
+
 public class Interpreter {
     private final SymbolTable symbolTable;
-    private final Scanner scanner = new Scanner(System.in);
-    private final DecimalFormat df = new DecimalFormat("0.00");   // kapoy float issue
-    private int currentLine = 0;
+    private final Scanner scanner;
+    private final PrintStream output;
 
     public Interpreter(SymbolTable symbolTable) {
-        this.symbolTable = symbolTable;
+        this(symbolTable, System.in, System.out);
     }
 
-    // Entry Point /////////////////////////////////////////////////////////////////////////////
+    public Interpreter(SymbolTable symbolTable, InputStream input, PrintStream output) {
+        this.symbolTable = symbolTable;
+        this.scanner = new Scanner(input, StandardCharsets.UTF_8);
+        this.output = output;
+    }
 
     public void execute(ProgramNode program) {
-        for (Node statement : program.statements) {
-            executeNode(statement);
-        }
+        executeBlock(program.statements);
     }
-
-    // Dispatcher //////////////////////////////////////////////////////////////////////////////
 
     private void executeNode(Node node) {
-        currentLine = node.line;
         switch (node) {
-            case DeclareNode n -> executeDeclare(n);
-            case AssignNode  n -> executeAssign(n);
-            case PrintNode   n -> executePrint(n);
-            case ScanNode    n -> executeScan(n);
-            case IfNode      n -> executeIf(n);
-            case ForNode     n -> executeFor(n);
-            case RepeatNode  n -> executeRepeat(n);
+            case DeclareNode n -> {
+                Object value = n.value == null ? n.type.defaultValue() : evaluate(n.value);
+                symbolTable.setValue(n.name, value, n.line);
+            }
+            case AssignNode n -> executeAssign(n);
+            case PrintNode n -> executePrint(n);
+            case ScanNode n -> executeScan(n);
+            case IfNode n -> executeIf(n);
+            case ForNode n -> executeFor(n);
+            case RepeatNode n -> {
+                while (asBoolean(evaluate(n.condition), n.condition.line)) executeBlock(n.body);
+            }
             case IncDecNode n -> evaluateIncDec(n);
-            default -> throw new LexorException(
-                    LexorException.Phase.RUNTIME, currentLine, "Unknown node: " + node.getClass().getSimpleName()
-            );
+            default -> throw error(node.line, "Unknown node: " + node.getClass().getSimpleName());
         }
     }
 
-    // Declare /////////////////////////////////////////////////////////////////////////////////
-
-    private void executeDeclare(DeclareNode node) {
-        Object value = node.value != null ? evaluate(node.value) : getDefault(node.type);
-
-        if (node.type.equals("FLOAT") && value instanceof Integer i) {
-            value = i.floatValue();
-        }
-
-        symbolTable.setValue(node.name, value);
-    }
-
-    private Object getDefault(String type) {
-        return switch (type) {
-            case "INT"   -> 0;
-            case "FLOAT" -> 0.0f;
-            case "CHAR"  -> '\0';
-            case "BOOL"  -> false;
-            default      -> null;
-        };
-    }
-
-    // Assign //////////////////////////////////////////////////////////////////////////////////
-
-    private void executeAssign(AssignNode node) {
+    private Object executeAssign(AssignNode node) {
         Object value = evaluate(node.value);
-        symbolTable.setValue(node.name, value);
-
-        if (node.value instanceof AssignNode inner) {
-            symbolTable.setValue(node.name, symbolTable.getValue(inner.name));
-        }
+        symbolTable.setValue(node.name, value, node.line);
+        return symbolTable.getValue(node.name, node.line);
     }
-
-    // Print ///////////////////////////////////////////////////////////////////////////////////
 
     private void executePrint(PrintNode node) {
-        StringBuilder output = new StringBuilder();
-        for (Node part : node.parts) {
-            output.append(formatValue(evaluate(part)));
-        }
-        System.out.print(output);
+        StringBuilder text = new StringBuilder();
+        for (Node part : node.parts) text.append(formatValue(evaluate(part)));
+        output.print(text);
     }
 
     private String formatValue(Object value) {
-        if (value instanceof Boolean b)                return b ? "TRUE" : "FALSE";
+        if (value instanceof Boolean b) return b ? "TRUE" : "FALSE";
         if (value instanceof Character c && c == '\0') return "";
-        if (value instanceof Float f) {
-            // If the float has no fractional part, print as integer (e.g. 2.0 not 2.0000)
-            if (f == Math.floor(f) && !Float.isInfinite(f)) {
-                return f.intValue() + ".0";
-            }
-            // Strip trailing zeros (e.g. 3.14000 -> 3.14)
-            // return String.valueOf(f).replaceAll("0+$", "").replaceAll("\\.$", ".0");
-            return df.format(f);  // ahahahaha ezzzzz
-        }
+        if (value instanceof Float f) return Float.toString(f);
         return String.valueOf(value);
     }
 
-    // Scan ////////////////////////////////////////////////////////////////////////////////////
-
     private void executeScan(ScanNode node) {
-        String[] inputs = scanner.nextLine().split(",");
-        Object value;
+        output.flush();
+        if (!scanner.hasNextLine()) {
+            throw error(node.line, "Expected input for SCAN, but reached end of input.");
+        }
+        String[] inputs = scanner.nextLine().split(",", -1);
+        if (inputs.length != node.variables.size()) {
+            throw error(node.line, "SCAN expected " + node.variables.size()
+                    + " values, got " + inputs.length + ".");
+        }
 
-        for (int i = 0; i < node.variables.size(); i++) {
-            String varName = node.variables.get(i);
-            String variableType = symbolTable.getType(varName);
-            String raw     = inputs[i].trim();
-
+        List<Object> values = new ArrayList<>(inputs.length);
+        for (int i = 0; i < inputs.length; i++) {
+            String name = node.variables.get(i);
+            ValueType type = symbolTable.getType(name, RUNTIME, node.line);
+            String raw = type == ValueType.CHAR ? inputs[i] : inputs[i].trim();
+            Object value;
             try {
-                value = switch (variableType) {
-                    case "INT" -> Integer.parseInt(raw);
-                    case "FLOAT" -> Float.parseFloat(raw);
-                    case "CHAR" -> raw.charAt(0);
-                    case "BOOL" -> {
-                        if (raw.equals("TRUE")) {
-                            yield true;
-                        } else if (raw.equals("FALSE")) {
-                            yield false;
-                        } else {
-                            if (raw.equalsIgnoreCase("TRUE")){
-                                throw new LexorException(LexorException.Phase.RUNTIME, currentLine,
-                                        "Invalid boolean input: " + raw + ". Did you mean \"TRUE\"?");
-                            } else if (raw.equalsIgnoreCase("FALSE")) {
-                                throw new LexorException(LexorException.Phase.RUNTIME, currentLine,
-                                        "Invalid boolean input: " + raw + ". Did you mean \"FALSE\"?");
-                            }
-
-                            throw new LexorException(LexorException.Phase.RUNTIME, currentLine, "Invalid boolean input: " + raw);
-                        }
+                value = switch (type) {
+                    case INT -> Integer.parseInt(raw);
+                    case FLOAT -> Float.parseFloat(raw);
+                    case CHAR -> {
+                        if (raw.length() != 1) throw invalidInput(node.line, name, type, raw);
+                        yield raw.charAt(0);
                     }
-                    default -> raw;
+                    case BOOL -> {
+                        if (raw.equals("TRUE")) yield true;
+                        if (raw.equals("FALSE")) yield false;
+                        throw invalidInput(node.line, name, type, raw);
+                    }
+                    default -> throw invalidInput(node.line, name, type, raw);
                 };
             } catch (NumberFormatException e) {
-                throw new LexorException(LexorException.Phase.RUNTIME, currentLine,
-                        "Invalid input '" + raw + "' for variable '" + varName + "' of type '" + variableType + "'");
+                throw invalidInput(node.line, name, type, raw);
             }
+            values.add(type.coerce(value, RUNTIME, node.line));
+        }
 
-
-            symbolTable.setValue(varName, value);
+        for (int i = 0; i < values.size(); i++) {
+            symbolTable.setValue(node.variables.get(i), values.get(i), node.line);
         }
     }
 
-    // If //////////////////////////////////////////////////////////////////////////////////////
+    private LexorException invalidInput(int line, String name, ValueType type, String raw) {
+        return error(line, "Invalid input '" + raw + "' for variable '" + name + "' of type " + type + ".");
+    }
 
     private void executeIf(IfNode node) {
-        boolean condition = (boolean) evaluate(node.condition);
-
-        if (condition) {
+        if (asBoolean(evaluate(node.condition), node.condition.line)) {
             executeBlock(node.thenBranch);
             return;
         }
-
         for (IfNode elseIf : node.elseIfBranches) {
-            if ((boolean) evaluate(elseIf.condition)) {
+            if (asBoolean(evaluate(elseIf.condition), elseIf.condition.line)) {
                 executeBlock(elseIf.thenBranch);
                 return;
             }
         }
-
-        if (node.elseBranch != null) {
-            executeBlock(node.elseBranch);
-        }
+        if (node.elseBranch != null) executeBlock(node.elseBranch);
     }
-
-    // For /////////////////////////////////////////////////////////////////////////////////////
 
     private void executeFor(ForNode node) {
         executeNode(node.initialization);
-        while ((boolean) evaluate(node.condition)) {
+        while (asBoolean(evaluate(node.condition), node.condition.line)) {
             executeBlock(node.body);
             executeNode(node.update);
         }
     }
 
-    // Repeat //////////////////////////////////////////////////////////////////////////////////
-
-    private void executeRepeat(RepeatNode node) {
-        while ((boolean) evaluate(node.condition)) {
-            executeBlock(node.body);
-        }
-    }
-
-    // Block ///////////////////////////////////////////////////////////////////////////////////
-
     private void executeBlock(List<Node> block) {
         for (Node node : block) executeNode(node);
     }
 
-    // Evaluator ///////////////////////////////////////////////////////////////////////////////
-
     private Object evaluate(Node node) {
-        currentLine = node.line;
         return switch (node) {
-            case LiteralNode  n -> n.value;
-            case VariableNode n -> symbolTable.getValue(n.name);
-            case AssignNode   n -> { executeAssign(n); yield symbolTable.getValue(n.name); }
+            case LiteralNode n -> n.value;
+            case VariableNode n -> symbolTable.getValue(n.name, n.line);
+            case AssignNode n -> executeAssign(n);
             case BinaryOpNode n -> evaluateBinary(n);
-            case UnaryOpNode  n -> evaluateUnary(n);
+            case UnaryOpNode n -> evaluateUnary(n);
             case IncDecNode n -> evaluateIncDec(n);
-            default -> throw new LexorException(
-                    LexorException.Phase.RUNTIME, currentLine, "Cannot evaluate node: " + node.getClass().getSimpleName()
-            );
+            default -> throw error(node.line, "Cannot evaluate node: " + node.getClass().getSimpleName());
         };
     }
-
-    // Binary Expressions //////////////////////////////////////////////////////////////////////
 
     private Object evaluateBinary(BinaryOpNode node) {
-        Object left  = evaluate(node.left);
+        Object left = evaluate(node.left);
+        if (node.operator.equals("AND")) {
+            return asBoolean(left, node.line) && asBoolean(evaluate(node.right), node.line);
+        }
+        if (node.operator.equals("OR")) {
+            return asBoolean(left, node.line) || asBoolean(evaluate(node.right), node.line);
+        }
         Object right = evaluate(node.right);
-
         return switch (node.operator) {
-            case "+"   -> addValues(left, right);
-            case "-"   -> subtractValues(left, right);
-            case "*"   -> multiplyValues(left, right);
-            case "/"   -> divideValues(left, right);
-            case "%"   -> moduloValues(left, right);
-            case ">"   -> compareValues(left, right) > 0;
-            case "<"   -> compareValues(left, right) < 0;
-            case ">="  -> compareValues(left, right) >= 0;
-            case "<="  -> compareValues(left, right) <= 0;
-            case "=="  -> compareValues(left, right) == 0;
-            case "<>"  -> compareValues(left, right) != 0;
-            case "AND" -> (boolean) left && (boolean) right;
-            case "OR"  -> (boolean) left || (boolean) right;
-            default    -> throw new LexorException(
-                    LexorException.Phase.RUNTIME, currentLine, "Unknown operator: " + node.operator
-            );
+            case "+", "-", "*", "/", "%" -> arithmetic(left, right, node.operator, node.line);
+            case ">" -> compareNumbers(left, right, node.line) > 0;
+            case "<" -> compareNumbers(left, right, node.line) < 0;
+            case ">=" -> compareNumbers(left, right, node.line) >= 0;
+            case "<=" -> compareNumbers(left, right, node.line) <= 0;
+            case "==" -> equalValues(left, right, node.line);
+            case "<>" -> !equalValues(left, right, node.line);
+            default -> throw error(node.line, "Unknown operator: " + node.operator);
         };
     }
 
-    private Object addValues(Object left, Object right) {
-        if (left instanceof Float || right instanceof Float)
-            return toFloat(left) + toFloat(right);
-        return toInt(left) + toInt(right);
+    private Object arithmetic(Object left, Object right, String operator, int line) {
+        if (left instanceof Integer a && right instanceof Integer b) {
+            try {
+                return switch (operator) {
+                    case "+" -> Math.addExact(a, b);
+                    case "-" -> Math.subtractExact(a, b);
+                    case "*" -> Math.multiplyExact(a, b);
+                    case "/" -> {
+                        checkDivisor(b, line);
+                        if (a == Integer.MIN_VALUE && b == -1) throw error(line, "INT overflow.");
+                        yield a / b;
+                    }
+                    case "%" -> {
+                        checkDivisor(b, line);
+                        yield a % b;
+                    }
+                    default -> throw error(line, "Unknown operator: " + operator);
+                };
+            } catch (ArithmeticException e) {
+                throw error(line, "INT overflow.");
+            }
+        }
+
+        float a = asFloat(left, line);
+        float b = asFloat(right, line);
+        if (operator.equals("/") || operator.equals("%")) checkDivisor(b, line);
+        float result = switch (operator) {
+            case "+" -> a + b;
+            case "-" -> a - b;
+            case "*" -> a * b;
+            case "/" -> a / b;
+            case "%" -> a % b;
+            default -> throw error(line, "Unknown operator: " + operator);
+        };
+        return finite(result, line);
     }
 
-    private Object subtractValues(Object left, Object right) {
-        if (left instanceof Float || right instanceof Float)
-            return toFloat(left) - toFloat(right);
-        return toInt(left) - toInt(right);
+    private void checkDivisor(double value, int line) {
+        if (value == 0) throw error(line, "Division or modulo by zero.");
     }
 
-    private Object multiplyValues(Object left, Object right) {
-        if (left instanceof Float || right instanceof Float)
-            return toFloat(left) * toFloat(right);
-        return toInt(left) * toInt(right);
+    private int compareNumbers(Object left, Object right, int line) {
+        double a = asDouble(left, line);
+        double b = asDouble(right, line);
+        return a < b ? -1 : a > b ? 1 : 0;
     }
 
-    private Object divideValues(Object left, Object right) {
-        if (left instanceof Float || right instanceof Float)
-            return toFloat(left) / toFloat(right);
-        int divisor = toInt(right);
-        if (divisor == 0) throw new LexorException(
-                LexorException.Phase.RUNTIME, currentLine, "Division by zero."
-        );
-        return toInt(left) / divisor;
+    private boolean equalValues(Object left, Object right, int line) {
+        if (left instanceof Boolean a && right instanceof Boolean b) return a.equals(b);
+        if (left instanceof Character a && right instanceof Character b) return a.equals(b);
+        return compareNumbers(left, right, line) == 0;
     }
-
-    private Object moduloValues(Object left, Object right) {
-        if (left instanceof Float || right instanceof Float)
-            return toFloat(left) % toFloat(right);
-        return toInt(left) % toInt(right);
-    }
-
-    private int compareValues(Object left, Object right) {
-        if (left instanceof Integer l && right instanceof Integer r) return Integer.compare(l, r);
-        if (left instanceof Float || right instanceof Float) return Float.compare(toFloat(left), toFloat(right));
-        if (left instanceof Boolean l && right instanceof Boolean r) return Boolean.compare(l, r);
-        if (left instanceof Character l && right instanceof Character r) return Character.compare(l, r);
-        throw new LexorException(
-                LexorException.Phase.RUNTIME, currentLine, "Cannot compare " + left + " and " + right + "."
-        );
-    }
-
-    // Unary Expressions ///////////////////////////////////////////////////////////////////////
 
     private Object evaluateUnary(UnaryOpNode node) {
-        Object operand = evaluate(node.operand);
+        Object value = evaluate(node.operand);
         return switch (node.operator) {
-            case "-"   -> operand instanceof Float f ? -f : -toInt(operand);
-            case "+"   -> operand;
-            case "NOT" -> !(boolean) operand;
-            default    -> throw new LexorException(
-                    LexorException.Phase.RUNTIME, currentLine, "Unknown unary operator: " + node.operator
-            );
+            case "-" -> {
+                if (value instanceof Integer i) {
+                    try {
+                        yield Math.negateExact(i);
+                    } catch (ArithmeticException e) {
+                        throw error(node.line, "INT overflow.");
+                    }
+                }
+                yield finite(-asFloat(value, node.line), node.line);
+            }
+            case "+" -> {
+                if (value instanceof Integer) yield value;
+                yield finite(asFloat(value, node.line), node.line);
+            }
+            case "NOT" -> !asBoolean(value, node.line);
+            default -> throw error(node.line, "Unknown unary operator: " + node.operator);
         };
-    }
-
-    // Type Helpers ////////////////////////////////////////////////////////////////////////////
-
-    private int toInt(Object value) {
-        if (value instanceof Integer i) return i;
-        if (value instanceof Float f) return f.intValue();
-        throw new LexorException(
-                LexorException.Phase.RUNTIME, currentLine, "Cannot convert to INT: " + value
-        );
-    }
-
-    private float toFloat(Object value) {
-        if (value instanceof Float f) return f;
-        if (value instanceof Integer i) return i.floatValue();
-        throw new LexorException(
-                LexorException.Phase.RUNTIME, currentLine, "Cannot convert to FLOAT: " + value
-        );
     }
 
     private Object evaluateIncDec(IncDecNode node) {
-        Object current = symbolTable.getValue(node.name);
-        Object newValue = node.isIncrement ? increment(current) : decrement(current);
-
-        if (node.isPrefix) {
-            // ++x / --x: update first, return new value
-            symbolTable.setValue(node.name, newValue);
-            return newValue;
-        } else {
-            // x++ / x--: return old value, then update
-            symbolTable.setValue(node.name, newValue);
-            return current;
-        }
+        Object current = symbolTable.getValue(node.name, node.line);
+        Object next = arithmetic(current, 1, node.isIncrement ? "+" : "-", node.line);
+        symbolTable.setValue(node.name, next, node.line);
+        return node.isPrefix ? next : current;
     }
 
-    private Object increment(Object value) {
-        if (value instanceof Integer i) return i + 1;
-        if (value instanceof Float   f) return f + 1.0f;
-        throw new LexorException(LexorException.Phase.RUNTIME, currentLine,
-                "Cannot increment non-numeric value."
-        );
+    private boolean asBoolean(Object value, int line) {
+        if (value instanceof Boolean b) return b;
+        throw error(line, "Expected BOOL, got " + value + ".");
     }
 
-    private Object decrement(Object value) {
-        if (value instanceof Integer i) return i - 1;
-        if (value instanceof Float   f) return f - 1.0f;
-        throw new LexorException(LexorException.Phase.RUNTIME, currentLine,
-                "Cannot decrement non-numeric value."
-        );
+    private float asFloat(Object value, int line) {
+        if (value instanceof Integer i) return i.floatValue();
+        if (value instanceof Float f) return finite(f, line);
+        throw error(line, "Expected numeric value, got " + value + ".");
+    }
+
+    private double asDouble(Object value, int line) {
+        if (value instanceof Integer i) return i.doubleValue();
+        if (value instanceof Float f) return finite(f, line);
+        throw error(line, "Expected numeric value, got " + value + ".");
+    }
+
+    private float finite(float value, int line) {
+        if (!Float.isFinite(value)) throw error(line, "FLOAT value must be finite.");
+        return value;
+    }
+
+    private LexorException error(int line, String message) {
+        return new LexorException(RUNTIME, line, message);
     }
 }

@@ -1,293 +1,197 @@
 package lexor;
-import java.util.HashMap;
-import java.util.List;
+
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 public class Lexer {
+    private static final Map<String, TokenType> KEYWORDS = Map.ofEntries(
+            Map.entry("DECLARE", TokenType.DECLARE), Map.entry("PRINT", TokenType.PRINT),
+            Map.entry("SCAN", TokenType.SCAN), Map.entry("IF", TokenType.IF),
+            Map.entry("ELSE", TokenType.ELSE), Map.entry("FOR", TokenType.FOR),
+            Map.entry("AND", TokenType.AND), Map.entry("OR", TokenType.OR),
+            Map.entry("NOT", TokenType.NOT), Map.entry("INT", TokenType.INT),
+            Map.entry("FLOAT", TokenType.FLOAT), Map.entry("CHAR", TokenType.CHAR),
+            Map.entry("BOOL", TokenType.BOOL), Map.entry("SCRIPT", TokenType.SCRIPT),
+            Map.entry("AREA", TokenType.AREA), Map.entry("START", TokenType.START),
+            Map.entry("END", TokenType.END), Map.entry("REPEAT", TokenType.REPEAT),
+            Map.entry("WHEN", TokenType.WHEN));
+
+    private static final Map<String, TokenType> COMPOUND_KEYWORDS = Map.ofEntries(
+            Map.entry("SCRIPT AREA", TokenType.SCRIPT_AREA),
+            Map.entry("START SCRIPT", TokenType.START_SCRIPT),
+            Map.entry("END SCRIPT", TokenType.END_SCRIPT),
+            Map.entry("START IF", TokenType.START_IF), Map.entry("END IF", TokenType.END_IF),
+            Map.entry("ELSE IF", TokenType.ELSE_IF),
+            Map.entry("START FOR", TokenType.START_FOR), Map.entry("END FOR", TokenType.END_FOR),
+            Map.entry("REPEAT WHEN", TokenType.REPEAT_WHEN),
+            Map.entry("START REPEAT", TokenType.START_REPEAT),
+            Map.entry("END REPEAT", TokenType.END_REPEAT));
+
     private final String source;
-    private int pos = 0;
-    private int line = 1;
     private final List<Token> tokens = new ArrayList<>();
+    private int pos;
+    private int line = 1;
 
     public Lexer(String source) {
         this.source = source;
     }
 
-    private static final Map<String, TokenType> KEYWORDS = new HashMap<>();
-
-    static {
-        KEYWORDS.put("DECLARE", TokenType.DECLARE);           //
-        KEYWORDS.put("PRINT",   TokenType.PRINT);             //
-        KEYWORDS.put("SCAN",    TokenType.SCAN);              //
-        KEYWORDS.put("IF",      TokenType.IF);                //
-        KEYWORDS.put("FOR",     TokenType.FOR);               //
-        KEYWORDS.put("AND",     TokenType.AND);               //
-        KEYWORDS.put("OR",      TokenType.OR);                //
-        KEYWORDS.put("NOT",     TokenType.NOT);               //
-        KEYWORDS.put("INT",     TokenType.INT);               //
-        KEYWORDS.put("FLOAT",   TokenType.FLOAT);             //
-        KEYWORDS.put("CHAR",    TokenType.CHAR);              //
-        KEYWORDS.put("BOOL",    TokenType.BOOL);              //
-        // "SCRIPT", "START", "END", "ELSE", "REPEAT" kay handled sa readIdentifierOrKeyword() coz naa silay space between two keywords
-    }
-
     public List<Token> tokenize() {
-        while (pos < source.length()) {
-            skipWhitespace();
-            if (pos >= source.length()) break;
-
-            char c = source.charAt(pos);
-
-            if (isComment()) { skipComment(); }
-            else if (c == '\'') { readCharLiteral(); }
-            else if (c == '"') { readStringOrBool(); }
-            else if (Character.isDigit(c)) { readNumber(); }
-            else if (Character.isLetter(c) || c == '_') { readIdentifierOrKeyword(); }
-            else { readSymbol(); }
+        if (!tokens.isEmpty() && tokens.getLast().type == TokenType.EOF) {
+            return List.copyOf(tokens);
         }
-
+        while (pos < source.length()) {
+            char c = source.charAt(pos);
+            if (isHorizontalWhitespace(c)) {
+                pos++;
+            } else if (isLineBreak(c)) {
+                readNewline();
+            } else if (c == '%' && nextIs('%')) {
+                while (pos < source.length() && !isLineBreak(source.charAt(pos))) pos++;
+            } else if (c == '\'') {
+                readCharLiteral();
+            } else if (c == '"') {
+                readStringOrBool();
+            } else if (Character.isDigit(c)) {
+                readNumber();
+            } else if (Character.isLetter(c) || c == '_') {
+                readIdentifierOrKeyword();
+            } else {
+                readSymbol();
+            }
+        }
         tokens.add(new Token(TokenType.EOF, "", line));
-        return tokens;
+        return List.copyOf(tokens);
     }
 
-    private boolean isComment() {
-        return pos + 1 < source.length() &&
-                source.charAt(pos) == '%' &&
-                source.charAt(pos + 1) == '%';
+    private static boolean isHorizontalWhitespace(char c) {
+        return c == ' ' || c == '\t';
     }
 
-    private void skipComment() {
-        while (pos < source.length() && source.charAt(pos) != '\n') pos++;
+    private static boolean isLineBreak(char c) {
+        return c == '\n' || c == '\r';
     }
 
-    private void skipWhitespace() {
-        while (pos < source.length()) {
-            char c = source.charAt(pos);
-            if (c == '\n') { line++; pos++; }
-            else if (Character.isWhitespace(c)) { pos++; }
-            else break;
-        }
+    private static boolean isIdentifierPart(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
+    }
+
+    private boolean nextIs(char c) {
+        return pos + 1 < source.length() && source.charAt(pos + 1) == c;
+    }
+
+    private void readNewline() {
+        tokens.add(new Token(TokenType.NEWLINE, "\n", line));
+        if (source.charAt(pos) == '\r' && nextIs('\n')) pos++;
+        pos++;
+        line++;
     }
 
     private void readIdentifierOrKeyword() {
         int start = pos;
-        while (pos < source.length() &&
-                (Character.isLetterOrDigit(source.charAt(pos)) || source.charAt(pos) == '_')) {
-            pos++;
-        }
+        while (pos < source.length() && isIdentifierPart(source.charAt(pos))) pos++;
         String word = source.substring(start, pos);
 
-        // Handle compound keywords by peeking at next word
-        switch (word) {
-            case "SCRIPT" -> {
-                String next = peekNextWord();
-                if (next.equals("AREA")) {
-                    consumeNextWord();
-                    tokens.add(new Token(TokenType.SCRIPT_AREA, "SCRIPT AREA", line));
-                } else {
-                    tokens.add(new Token(TokenType.IDENTIFIER, word, line));
+        if (word.equals("SCRIPT") || word.equals("START") || word.equals("END")
+                || word.equals("ELSE") || word.equals("REPEAT")) {
+            int nextStart = pos;
+            while (nextStart < source.length() && isHorizontalWhitespace(source.charAt(nextStart))) nextStart++;
+            int nextEnd = nextStart;
+            while (nextEnd < source.length() && isIdentifierPart(source.charAt(nextEnd))) nextEnd++;
+            if (nextStart > pos && nextEnd > nextStart) {
+                String compound = word + " " + source.substring(nextStart, nextEnd);
+                TokenType type = COMPOUND_KEYWORDS.get(compound);
+                if (type != null) {
+                    pos = nextEnd;
+                    tokens.add(new Token(type, compound, line));
+                    return;
                 }
-            }
-            case "START" -> {
-                String next = peekNextWord();
-                switch (next) {
-                    case "SCRIPT" -> { consumeNextWord(); tokens.add(new Token(TokenType.START_SCRIPT, "START SCRIPT", line)); }
-                    case "IF"     -> { consumeNextWord(); tokens.add(new Token(TokenType.START_IF,     "START IF",     line)); }
-                    case "FOR"    -> { consumeNextWord(); tokens.add(new Token(TokenType.START_FOR,    "START FOR",    line)); }
-                    case "REPEAT" -> { consumeNextWord(); tokens.add(new Token(TokenType.START_REPEAT, "START REPEAT", line)); }
-                    default       -> tokens.add(new Token(TokenType.IDENTIFIER, word, line));
-                }
-            }
-            case "END" -> {
-                String next = peekNextWord();
-                switch (next) {
-                    case "SCRIPT" -> { consumeNextWord(); tokens.add(new Token(TokenType.END_SCRIPT, "END SCRIPT", line)); }
-                    case "IF"     -> { consumeNextWord(); tokens.add(new Token(TokenType.END_IF,     "END IF",     line)); }
-                    case "FOR"    -> { consumeNextWord(); tokens.add(new Token(TokenType.END_FOR,    "END FOR",    line)); }
-                    case "REPEAT" -> { consumeNextWord(); tokens.add(new Token(TokenType.END_REPEAT, "END REPEAT", line)); }
-                    default       -> tokens.add(new Token(TokenType.IDENTIFIER, word, line));
-                }
-            }
-            case "ELSE" -> {
-                String next = peekNextWord();
-                if (next.equals("IF")) {
-                    consumeNextWord();
-                    tokens.add(new Token(TokenType.ELSE_IF, "ELSE IF", line));
-                } else {
-                    tokens.add(new Token(TokenType.ELSE, "ELSE", line));
-                }
-            }
-            case "REPEAT" -> {
-                String next = peekNextWord();
-                if (next.equals("WHEN")) {
-                    consumeNextWord();
-                    tokens.add(new Token(TokenType.REPEAT_WHEN, "REPEAT WHEN", line));
-                } else {
-                    tokens.add(new Token(TokenType.IDENTIFIER, word, line));
-                }
-            }
-            default -> {
-                TokenType type = KEYWORDS.getOrDefault(word, TokenType.IDENTIFIER);
-                tokens.add(new Token(type, word, line));
             }
         }
+        tokens.add(new Token(KEYWORDS.getOrDefault(word, TokenType.IDENTIFIER), word, line));
     }
 
     private void readCharLiteral() {
-        pos++; // skip opening '
-        if (pos >= source.length()) {
-            throw new LexorException(LexorException.Phase.LEXER, line, "Unterminated CHAR literal.");
+        pos++;
+        if (pos >= source.length() || isLineBreak(source.charAt(pos))) {
+            throw error("Unterminated CHAR literal.");
         }
-        char value = source.charAt(pos);
-        pos++; // skip the actual character
+        char value = source.charAt(pos++);
         if (pos >= source.length() || source.charAt(pos) != '\'') {
-            throw new LexorException(LexorException.Phase.LEXER, line, "CHAR literal must be a single character");
+            throw error("CHAR literal must contain exactly one character.");
         }
-        pos++; // skip closing '
+        pos++;
         tokens.add(new Token(TokenType.CHAR_LITERAL, String.valueOf(value), line));
     }
 
     private void readStringOrBool() {
-        pos++; // skip opening "
-        StringBuilder sb = new StringBuilder();
+        int start = ++pos;
         while (pos < source.length() && source.charAt(pos) != '"') {
-            if (source.charAt(pos) == '\n') {
-                throw new LexorException(LexorException.Phase.LEXER, line, "Unterminated string");
-            }
-            sb.append(source.charAt(pos));
+            if (isLineBreak(source.charAt(pos))) throw error("Unterminated string literal.");
             pos++;
         }
-        if (pos >= source.length()) {
-            throw new LexorException(LexorException.Phase.LEXER, line, "Unterminated string");
-        }
-        pos++; // skip closing "
-        String value = sb.toString();
-
-        // Check if it's a BOOL literal
-        if (value.equals("TRUE") || value.equals("FALSE")) {
-            tokens.add(new Token(TokenType.BOOL_LITERAL, value, line));
-        } else {
-            tokens.add(new Token(TokenType.STRING_LITERAL, value, line));
-        }
+        if (pos >= source.length()) throw error("Unterminated string literal.");
+        String value = source.substring(start, pos++);
+        TokenType type = value.equals("TRUE") || value.equals("FALSE")
+                ? TokenType.BOOL_LITERAL : TokenType.STRING_LITERAL;
+        tokens.add(new Token(type, value, line));
     }
 
     private void readNumber() {
         int start = pos;
-        boolean isFloat = false;
-
-        while (pos < source.length() && Character.isDigit(source.charAt(pos))) {
+        while (pos < source.length() && Character.isDigit(source.charAt(pos))) pos++;
+        boolean isFloat = pos + 1 < source.length() && source.charAt(pos) == '.'
+                && Character.isDigit(source.charAt(pos + 1));
+        if (isFloat) {
             pos++;
+            while (pos < source.length() && Character.isDigit(source.charAt(pos))) pos++;
         }
-
-        // Check for decimal point — makes it a FLOAT
-        if (pos < source.length() && source.charAt(pos) == '.' &&
-                pos + 1 < source.length() && Character.isDigit(source.charAt(pos + 1))) {
-            isFloat = true;
-            pos++; // skip the dot
-            while (pos < source.length() && Character.isDigit(source.charAt(pos))) {
-                pos++;
-            }
-        }
-
-        String value = source.substring(start, pos);
-        TokenType type = isFloat ? TokenType.FLOAT_LITERAL : TokenType.INT_LITERAL;
-        tokens.add(new Token(type, value, line));
+        tokens.add(new Token(isFloat ? TokenType.FLOAT_LITERAL : TokenType.INT_LITERAL,
+                source.substring(start, pos), line));
     }
 
     private void readSymbol() {
-        char c = source.charAt(pos);
-
-        switch (c) {
-            case '&' -> { tokens.add(new Token(TokenType.AMPERSAND, "&", line)); pos++; }
-            case '$' -> { tokens.add(new Token(TokenType.DOLLAR,    "$", line)); pos++; }
-            case ':' -> { tokens.add(new Token(TokenType.COLON,     ":", line)); pos++; }
-            case ',' -> { tokens.add(new Token(TokenType.COMMA,     ",", line)); pos++; }
-            case '(' -> { tokens.add(new Token(TokenType.LPAREN,    "(", line)); pos++; }
-            case ')' -> { tokens.add(new Token(TokenType.RPAREN,    ")", line)); pos++; }
-            case '+' -> {
-                            if (pos + 1 < source.length() && source.charAt(pos + 1) == '+') {
-                                tokens.add(new Token(TokenType.INCREMENT, "++", line)); pos += 2;
-                            } else {
-                                tokens.add(new Token(TokenType.PLUS, "+", line)); pos++;
-                            }
-                        }
-            case '-' -> {
-                            if (pos + 1 < source.length() && source.charAt(pos + 1) == '-') {
-                                tokens.add(new Token(TokenType.DECREMENT, "--", line)); pos += 2;
-                            } else {
-                                tokens.add(new Token(TokenType.MINUS, "-", line)); pos++;
-                            }
-                        }
-            case '*' -> { tokens.add(new Token(TokenType.MULTIPLY,  "*", line)); pos++; }
-            case '/' -> { tokens.add(new Token(TokenType.DIVIDE,    "/", line)); pos++; }
-            case '%' -> { tokens.add(new Token(TokenType.MODULO,    "%", line)); pos++; }
-            case '=' -> {
-                if (pos + 1 < source.length() && source.charAt(pos + 1) == '='){
-                    tokens.add(new Token(TokenType.EQUAL, "==", line)); pos+=2;
-                } else {
-                    tokens.add(new Token(TokenType.ASSIGN, "=", line)); pos++;
-                }
-            }
-
-            // Two-character operators
-            case '>' -> {
-                if (pos + 1 < source.length() && source.charAt(pos + 1) == '=') {
-                    tokens.add(new Token(TokenType.GREATER_EQ, ">=", line)); pos += 2;
-                } else {
-                    tokens.add(new Token(TokenType.GREATER, ">", line)); pos++;
-                }
-            }
+        switch (source.charAt(pos)) {
+            case '&' -> addSymbol(TokenType.AMPERSAND, 1);
+            case '$' -> addSymbol(TokenType.DOLLAR, 1);
+            case ':' -> addSymbol(TokenType.COLON, 1);
+            case ',' -> addSymbol(TokenType.COMMA, 1);
+            case '(' -> addSymbol(TokenType.LPAREN, 1);
+            case ')' -> addSymbol(TokenType.RPAREN, 1);
+            case '*' -> addSymbol(TokenType.MULTIPLY, 1);
+            case '/' -> addSymbol(TokenType.DIVIDE, 1);
+            case '%' -> addSymbol(TokenType.MODULO, 1);
+            case '+' -> addSymbol(nextIs('+') ? TokenType.INCREMENT : TokenType.PLUS, nextIs('+') ? 2 : 1);
+            case '-' -> addSymbol(nextIs('-') ? TokenType.DECREMENT : TokenType.MINUS, nextIs('-') ? 2 : 1);
+            case '=' -> addSymbol(nextIs('=') ? TokenType.EQUAL : TokenType.ASSIGN, nextIs('=') ? 2 : 1);
+            case '>' -> addSymbol(nextIs('=') ? TokenType.GREATER_EQ : TokenType.GREATER, nextIs('=') ? 2 : 1);
             case '<' -> {
-                if (pos + 1 < source.length() && source.charAt(pos + 1) == '=') {
-                    tokens.add(new Token(TokenType.LESS_EQ, "<=", line)); pos += 2;
-                } else if (pos + 1 < source.length() && source.charAt(pos + 1) == '>') {
-                    tokens.add(new Token(TokenType.NOT_EQUAL, "<>", line)); pos += 2;
-                } else {
-                    tokens.add(new Token(TokenType.LESS, "<",  line)); pos++;
-                }
+                if (nextIs('=')) addSymbol(TokenType.LESS_EQ, 2);
+                else if (nextIs('>')) addSymbol(TokenType.NOT_EQUAL, 2);
+                else addSymbol(TokenType.LESS, 1);
             }
-
-            case '[' -> {
-                // Could be escape code like [#] or [[]
-                if (pos + 2 < source.length() && source.charAt(pos + 2) == ']') {
-                    String escape = source.substring(pos + 1, pos + 2); // the char inside []
-                    tokens.add(new Token(TokenType.ESCAPE_CODE, escape, line));
-                    pos += 3; // skip [ + char + ]
-                } else {
-                    tokens.add(new Token(TokenType.LBRACKET, "[", line)); pos++;
-                }
-            }
-            case ']' -> { tokens.add(new Token(TokenType.RBRACKET, "]", line)); pos++; }
-
-            default -> {
-                throw new LexorException(LexorException.Phase.LEXER, line, "Unknown character '" + c + "'.");
-            }
+            case '[' -> readEscape();
+            case ']' -> throw error("Unmatched closing bracket.");
+            default -> throw error("Unknown character '" + source.charAt(pos) + "'.");
         }
     }
 
-    private String peekNextWord() {
-        int tempPos = pos;
-
-        // Skip spaces and tabs only (NOT newlines — compound keywords are on same line)
-        while (tempPos < source.length() && source.charAt(tempPos) == ' ') tempPos++;
-
-        // Read the next word
-        StringBuilder sb = new StringBuilder();
-        while (tempPos < source.length() &&
-                Character.isLetter(source.charAt(tempPos))) {
-            sb.append(source.charAt(tempPos));
-            tempPos++;
+    private void readEscape() {
+        if (pos + 2 >= source.length() || isLineBreak(source.charAt(pos + 1))
+                || source.charAt(pos + 2) != ']') {
+            throw error("Escape code must contain exactly one character inside [].");
         }
-        return sb.toString();
+        tokens.add(new Token(TokenType.ESCAPE_CODE, source.substring(pos + 1, pos + 2), line));
+        pos += 3;
     }
 
-    private void consumeNextWord() {
-        // Skip spaces
-        while (pos < source.length() && source.charAt(pos) == ' ') pos++;
-        // Skip the word itself
-        while (pos < source.length() && Character.isLetter(source.charAt(pos))) pos++;
+    private void addSymbol(TokenType type, int length) {
+        tokens.add(new Token(type, source.substring(pos, pos + length), line));
+        pos += length;
     }
 
-
+    private LexorException error(String message) {
+        return new LexorException(LexorException.Phase.LEXER, line, message);
+    }
 }

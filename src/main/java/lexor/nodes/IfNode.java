@@ -8,7 +8,8 @@ public class IfNode extends Node{
     public final List<IfNode> elseIfBranches;  // ELSE IF chains
     public final List<Node> elseBranch;         // nullable
 
-    public IfNode(Node condition, List<Node> thenBranch, List<IfNode> elseIfBranches, List<Node> elseBranch) {
+    public IfNode(int line, Node condition, List<Node> thenBranch, List<IfNode> elseIfBranches, List<Node> elseBranch) {
+        super(line);
         this.condition = condition;
         this.thenBranch = thenBranch;
         this.elseIfBranches = elseIfBranches;

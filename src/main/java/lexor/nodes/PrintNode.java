@@ -4,7 +4,8 @@ import java.util.List;
 public class PrintNode extends Node{
     public final List<Node> parts;      // each item separated by &
 
-    public PrintNode(List<Node> parts){
+    public PrintNode(int line, List<Node> parts) {
+        super(line);
         this.parts = parts;
     }
 }

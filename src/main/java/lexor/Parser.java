@@ -1,38 +1,38 @@
 package lexor;
 
-import lexor.nodes.*;
-
 import java.util.ArrayList;
 import java.util.List;
+import lexor.nodes.*;
 
 public class Parser {
     private final List<Token> tokens;
-    private int pos = 0;
+    private int pos;
 
     public Parser(List<Token> tokens) {
-        this.tokens = tokens;
+        if (tokens.isEmpty() || tokens.getLast().type != TokenType.EOF) {
+            int line = tokens.isEmpty() ? 1 : tokens.getLast().line;
+            throw new LexorException(LexorException.Phase.PARSER, line, "Expected EOF token.");
+        }
+        this.tokens = List.copyOf(tokens);
     }
 
-    // helper functions ///////////////////////////////////////////////////////////////////////////////
-
-    private Token current(){
-        return tokens.get(pos);
+    private Token current() {
+        return tokens.get(Math.min(pos, tokens.size() - 1));
     }
 
-    private Token consume(){
-        return tokens.get(pos++);
+    private Token consume() {
+        Token token = current();
+        if (token.type != TokenType.EOF) pos++;
+        return token;
     }
 
     private Token peek() {
-        int index = pos + 1;
-        if (index >= tokens.size()) return tokens.getLast(); // EOF
-        return tokens.get(index);
+        return tokens.get(Math.min(pos + 1, tokens.size() - 1));
     }
 
     private Token expect(TokenType type) {
-        if (current().type != type) {
-            throw new LexorException(LexorException.Phase.PARSER, current().line, "Expected " + type + " but got '" + current().value + "'."
-            );
+        if (!check(type)) {
+            throw error(current(), "Expected " + type + " but got '" + current().value + "'.");
         }
         return consume();
     }
@@ -42,282 +42,171 @@ public class Parser {
     }
 
     private boolean match(TokenType type) {
-        if (check(type)) { consume(); return true; }
-        return false;
+        if (!check(type)) return false;
+        consume();
+        return true;
     }
 
-    // Entry Point //////////////////////////////////////////////////////////////////////////
+    private void skipNewlines() {
+        while (match(TokenType.NEWLINE)) { }
+    }
+
+    private void endLine() {
+        expect(TokenType.NEWLINE);
+        skipNewlines();
+    }
 
     public ProgramNode parse() {
-        expect(TokenType.SCRIPT_AREA);
+        skipNewlines();
+        Token start = expect(TokenType.SCRIPT_AREA);
+        endLine();
         expect(TokenType.START_SCRIPT);
+        endLine();
 
-        List<Node> declarations = new ArrayList<>();
-        List<Node> statements   = new ArrayList<>();
-
-        // declarations must come first
-        while (check(TokenType.DECLARE)) {
-            declarations.addAll(parseDeclaration());
-        }
-
-        // then executable statements
+        List<Node> statements = new ArrayList<>();
+        while (check(TokenType.DECLARE)) statements.addAll(parseDeclaration());
         while (!check(TokenType.END_SCRIPT) && !check(TokenType.EOF)) {
             statements.add(parseStatement());
         }
-
         expect(TokenType.END_SCRIPT);
-
-        if (!check(TokenType.EOF)) {
-            throw new LexorException(LexorException.Phase.PARSER, current().line,
-                    "Unexpected token after END SCRIPT"
-            );
-        }
-
-        List<Node> all = new ArrayList<>();
-        all.addAll(declarations);
-        all.addAll(statements);
-
-        return new ProgramNode(all);
+        if (!check(TokenType.EOF)) endLine();
+        expect(TokenType.EOF);
+        return new ProgramNode(start.line, statements);
     }
 
-    // Declarations ///////////////////////////////////////////////////////////////////////////
-
-    // DECLARE INT x, y, z=5
     private List<Node> parseDeclaration() {
-        Token t = expect(TokenType.DECLARE);
-        String type = consume().value;
+        Token declaration = expect(TokenType.DECLARE);
+        Token typeToken = current();
+        ValueType type = switch (typeToken.type) {
+            case INT -> ValueType.INT;
+            case FLOAT -> ValueType.FLOAT;
+            case CHAR -> ValueType.CHAR;
+            case BOOL -> ValueType.BOOL;
+            default -> throw error(typeToken, "Expected declaration type INT, FLOAT, CHAR, or BOOL.");
+        };
+        consume();
 
-        List<Node> nodes = new ArrayList<>();
-
+        List<Node> declarations = new ArrayList<>();
         do {
-            String name = expect(TokenType.IDENTIFIER).value;
-            Node value = null;
-            if (match(TokenType.ASSIGN)) {
-                value = parseExpression();
-            }
-            DeclareNode node = new DeclareNode(type, name, value);
-            node.line = t.line;
-            nodes.add(node);
+            Token name = expect(TokenType.IDENTIFIER);
+            Node value = match(TokenType.ASSIGN) ? parseExpression() : null;
+            declarations.add(new DeclareNode(declaration.line, type, name.value, value));
         } while (match(TokenType.COMMA));
-
-        return nodes;
+        endLine();
+        return declarations;
     }
-
-    // Statements //////////////////////////////////////////////////////////////////////////////////
 
     private Node parseStatement() {
-        return switch (current().type) {
-            case IDENTIFIER -> {
-                // post-increment/decrement as standalone statement
-                if (peek().type == TokenType.INCREMENT || peek().type == TokenType.DECREMENT) {
-                    yield parsePrimary();
-                }
-                yield parseAssignment();
-            }
-            // pre-increment/decrement as standalone statement
-            case INCREMENT, DECREMENT -> parseUnary();
-            case PRINT       -> parsePrint();
-            case SCAN        -> parseScan();
-            case IF          -> parseIf();
-            case FOR         -> parseFor();
-            case REPEAT_WHEN -> parseRepeat();
-            default -> throw new LexorException(LexorException.Phase.PARSER, current().line,
-                    "Unexpected token '" + current().value + "'."
-            );
-        };
-    }
-
-    // Assignment /////////////////////////////////////////////////////////////////////////////////////
-
-    // x = 5   or   x = y = 4  (chained assignment)
-    private Node parseAssignment() {
-        Token t = expect(TokenType.IDENTIFIER);
-        expect(TokenType.ASSIGN);
-
-        AssignNode node;
-
-        if (check(TokenType.IDENTIFIER) && peek().type == TokenType.ASSIGN) {
-            Node right = parseAssignment();
-            node = new AssignNode(t.value, right);
-        } else {
-            Node value = parseExpression();
-            node = new AssignNode(t.value, value);
+        switch (current().type) {
+            case IF: return parseIf();
+            case FOR: return parseFor();
+            case REPEAT_WHEN: return parseRepeat();
+            default: break;
         }
-
-        node.line = t.line;
-        return node;
+        Node statement = switch (current().type) {
+            case IDENTIFIER -> isIncDec(peek().type) ? parsePrimary() : parseAssignment();
+            case INCREMENT, DECREMENT -> parseUnary();
+            case PRINT -> parsePrint();
+            case SCAN -> parseScan();
+            default -> throw error(current(), "Unexpected token '" + current().value + "'.");
+        };
+        endLine();
+        return statement;
     }
 
-    // Print /////////////////////////////////////////////////////////////////////////////////////////////
+    private Node parseAssignment() {
+        Token name = expect(TokenType.IDENTIFIER);
+        expect(TokenType.ASSIGN);
+        Node value = check(TokenType.IDENTIFIER) && peek().type == TokenType.ASSIGN
+                ? parseAssignment() : parseExpression();
+        return new AssignNode(name.line, name.value, value);
+    }
 
-    // PRINT: x & t & z & $ & a_1 & [#] & "last"
     private Node parsePrint() {
-        Token t = expect(TokenType.PRINT);
+        Token print = expect(TokenType.PRINT);
         expect(TokenType.COLON);
-
         List<Node> parts = new ArrayList<>();
         parts.add(parsePrintPart());
-
-        while (match(TokenType.AMPERSAND)) {
-            parts.add(parsePrintPart());
-        }
-
-        PrintNode node = new PrintNode(parts);
-        node.line = t.line;
-        return node;
+        while (match(TokenType.AMPERSAND)) parts.add(parsePrintPart());
+        return new PrintNode(print.line, parts);
     }
 
     private Node parsePrintPart() {
-        if (check(TokenType.DOLLAR)) {           // pang newline ang $ bai
-            consume();
-            return new LiteralNode("\n", "STRING");
-        }
-
-        if (check(TokenType.ESCAPE_CODE)) {      // escape codes ang naa sa sod sa "[" og "]" bai
-            String code = consume().value;
-            return new LiteralNode(resolveEscape(code), "STRING");
-        }
+        Token token = current();
+        if (match(TokenType.DOLLAR)) return new LiteralNode(token.line, "\n", ValueType.STRING);
+        if (match(TokenType.ESCAPE_CODE)) return new LiteralNode(token.line, token.value, ValueType.STRING);
         return parseExpression();
     }
 
-    private String resolveEscape(String code) {
-        return switch (code) {
-            case "[" -> "[";
-            case "#" -> "#";
-            case "]" -> "]";
-            default  -> code;
-        };
-    }
-
-    // Scan /////////////////////////////////////////////////////////////////////////////////////////////
-
-    // SCAN: x, y
     private Node parseScan() {
-        Token t = expect(TokenType.SCAN);
+        Token scan = expect(TokenType.SCAN);
         expect(TokenType.COLON);
-
-        List<String> vars = new ArrayList<>();
-        vars.add(expect(TokenType.IDENTIFIER).value);
-        while (match(TokenType.COMMA)) {
-            vars.add(expect(TokenType.IDENTIFIER).value);
-        }
-
-        ScanNode node = new ScanNode(vars);
-        node.line = t.line;
-        return node;
+        List<String> variables = new ArrayList<>();
+        variables.add(expect(TokenType.IDENTIFIER).value);
+        while (match(TokenType.COMMA)) variables.add(expect(TokenType.IDENTIFIER).value);
+        return new ScanNode(scan.line, variables);
     }
 
-    // If ////////////////////////////////////////////////////////////////////////////////////////////////
+    private Node parseCondition() {
+        expect(TokenType.LPAREN);
+        Node condition = parseExpression();
+        expect(TokenType.RPAREN);
+        endLine();
+        return condition;
+    }
+
+    private List<Node> parseBlock(TokenType start, TokenType end) {
+        expect(start);
+        endLine();
+        List<Node> body = new ArrayList<>();
+        while (!check(end) && !check(TokenType.EOF)) body.add(parseStatement());
+        expect(end);
+        endLine();
+        return body;
+    }
 
     private Node parseIf() {
-        Token t = expect(TokenType.IF);
-        expect(TokenType.LPAREN);
-        Node condition = parseExpression();
-        expect(TokenType.RPAREN);
-        expect(TokenType.START_IF);
-
-        List<Node> thenBranch = new ArrayList<>();
-        while (!check(TokenType.END_IF) && !check(TokenType.ELSE)
-                && !check(TokenType.ELSE_IF) && !check(TokenType.EOF)) {
-            thenBranch.add(parseStatement());
-        }
-        expect(TokenType.END_IF);
-
-        List<IfNode> elseIfBranches = new ArrayList<>();
-        List<Node>   elseBranch     = null;
-
+        Token keyword = expect(TokenType.IF);
+        Node condition = parseCondition();
+        List<Node> thenBranch = parseBlock(TokenType.START_IF, TokenType.END_IF);
+        List<IfNode> alternatives = new ArrayList<>();
         while (check(TokenType.ELSE_IF)) {
-            Token elseIfToken = consume();
-            expect(TokenType.LPAREN);
-            Node elseIfCond = parseExpression();
-            expect(TokenType.RPAREN);
-            expect(TokenType.START_IF);
-
-            List<Node> elseIfBody = new ArrayList<>();
-            while (!check(TokenType.END_IF) && !check(TokenType.ELSE)
-                    && !check(TokenType.ELSE_IF) && !check(TokenType.EOF)) {
-                elseIfBody.add(parseStatement());
-            }
-            expect(TokenType.END_IF);
-
-            IfNode elseIfNode = new IfNode(elseIfCond, elseIfBody, new ArrayList<>(), null);
-            elseIfNode.line = elseIfToken.line;
-            elseIfBranches.add(elseIfNode);
+            Token alternative = consume();
+            Node alternativeCondition = parseCondition();
+            List<Node> body = parseBlock(TokenType.START_IF, TokenType.END_IF);
+            alternatives.add(new IfNode(alternative.line, alternativeCondition, body, List.of(), null));
         }
-
+        List<Node> elseBranch = null;
         if (match(TokenType.ELSE)) {
-            expect(TokenType.START_IF);
-            elseBranch = new ArrayList<>();
-            while (!check(TokenType.END_IF) && !check(TokenType.EOF)) {
-                elseBranch.add(parseStatement());
-            }
-            expect(TokenType.END_IF);
+            endLine();
+            elseBranch = parseBlock(TokenType.START_IF, TokenType.END_IF);
         }
-
-        IfNode node = new IfNode(condition, thenBranch, elseIfBranches, elseBranch);
-        node.line = t.line;
-        return node;
+        return new IfNode(keyword.line, condition, thenBranch, alternatives, elseBranch);
     }
 
-    // For loop /////////////////////////////////////////////////////////////////////////////////////
-
-    //                                     FOR (init, cond, update)
     private Node parseFor() {
-        Token t = expect(TokenType.FOR);
+        Token keyword = expect(TokenType.FOR);
         expect(TokenType.LPAREN);
-        Node init = parseAssignment();
+        Node initialization = parseAssignment();
         expect(TokenType.COMMA);
         Node condition = parseExpression();
         expect(TokenType.COMMA);
-        Node update = parseForUpdate();
+        Node update;
+        if (isIncDec(current().type)) update = parseUnary();
+        else if (check(TokenType.IDENTIFIER) && isIncDec(peek().type)) update = parsePrimary();
+        else update = parseAssignment();
         expect(TokenType.RPAREN);
-        expect(TokenType.START_FOR);
-
-        List<Node> body = new ArrayList<>();
-        while (!check(TokenType.END_FOR) && !check(TokenType.EOF)) {
-            body.add(parseStatement());
-        }
-        expect(TokenType.END_FOR);
-
-        ForNode node = new ForNode(init, condition, update, body);
-        node.line = t.line;
-        return node;
+        endLine();
+        List<Node> body = parseBlock(TokenType.START_FOR, TokenType.END_FOR);
+        return new ForNode(keyword.line, initialization, condition, update, body);
     }
 
-    private Node parseForUpdate() {
-
-        if (check(TokenType.INCREMENT) || check(TokenType.DECREMENT)){  // pre
-            return parseUnary();
-        }
-        if (check(TokenType.IDENTIFIER) &&
-                (peek().type == TokenType.INCREMENT || peek().type == TokenType.DECREMENT)){  // post
-            return parsePrimary();
-        }
-        return parseAssignment();  // assignment update like i=i+1
-    }
-
-    // Repeat ///////////////////////////////////////////////////////////////////////////////////////////
-
-    //                                     REPEAT WHEN (<BOOL expression> or condition)
     private Node parseRepeat() {
-        Token t = expect(TokenType.REPEAT_WHEN);
-        expect(TokenType.LPAREN);
-        Node condition = parseExpression();
-        expect(TokenType.RPAREN);
-        expect(TokenType.START_REPEAT);
-
-        List<Node> body = new ArrayList<>();
-        while (!check(TokenType.END_REPEAT) && !check(TokenType.EOF)) {
-            body.add(parseStatement());
-        }
-        expect(TokenType.END_REPEAT);
-
-        RepeatNode node = new RepeatNode(condition, body);
-        node.line = t.line;
-        return node;
+        Token keyword = expect(TokenType.REPEAT_WHEN);
+        Node condition = parseCondition();
+        List<Node> body = parseBlock(TokenType.START_REPEAT, TokenType.END_REPEAT);
+        return new RepeatNode(keyword.line, condition, body);
     }
-
-    // Expressions (with precedence) ///////////////////////////////////////////////////////////////////////
 
     private Node parseExpression() {
         return parseOr();
@@ -326,8 +215,8 @@ public class Parser {
     private Node parseOr() {
         Node left = parseAnd();
         while (check(TokenType.OR)) {
-            String op = consume().value;
-            left = new BinaryOpNode(left, op, parseAnd());
+            Token operator = consume();
+            left = new BinaryOpNode(operator.line, left, operator.value, parseAnd());
         }
         return left;
     }
@@ -335,8 +224,8 @@ public class Parser {
     private Node parseAnd() {
         Node left = parseEquality();
         while (check(TokenType.AND)) {
-            String op = consume().value;
-            left = new BinaryOpNode(left, op, parseEquality());
+            Token operator = consume();
+            left = new BinaryOpNode(operator.line, left, operator.value, parseEquality());
         }
         return left;
     }
@@ -344,18 +233,18 @@ public class Parser {
     private Node parseEquality() {
         Node left = parseComparison();
         while (check(TokenType.EQUAL) || check(TokenType.NOT_EQUAL)) {
-            String op = consume().value;
-            left = new BinaryOpNode(left, op, parseComparison());
+            Token operator = consume();
+            left = new BinaryOpNode(operator.line, left, operator.value, parseComparison());
         }
         return left;
     }
 
     private Node parseComparison() {
         Node left = parseAddSub();
-        while (check(TokenType.GREATER) || check(TokenType.LESS) ||
-                check(TokenType.GREATER_EQ) || check(TokenType.LESS_EQ)) {
-            String op = consume().value;
-            left = new BinaryOpNode(left, op, parseAddSub());
+        while (check(TokenType.GREATER) || check(TokenType.LESS)
+                || check(TokenType.GREATER_EQ) || check(TokenType.LESS_EQ)) {
+            Token operator = consume();
+            left = new BinaryOpNode(operator.line, left, operator.value, parseAddSub());
         }
         return left;
     }
@@ -363,8 +252,8 @@ public class Parser {
     private Node parseAddSub() {
         Node left = parseMulDiv();
         while (check(TokenType.PLUS) || check(TokenType.MINUS)) {
-            String op = consume().value;
-            left = new BinaryOpNode(left, op, parseMulDiv());
+            Token operator = consume();
+            left = new BinaryOpNode(operator.line, left, operator.value, parseMulDiv());
         }
         return left;
     }
@@ -372,72 +261,88 @@ public class Parser {
     private Node parseMulDiv() {
         Node left = parseUnary();
         while (check(TokenType.MULTIPLY) || check(TokenType.DIVIDE) || check(TokenType.MODULO)) {
-            String op = consume().value;
-            left = new BinaryOpNode(left, op, parseUnary());
+            Token operator = consume();
+            left = new BinaryOpNode(operator.line, left, operator.value, parseUnary());
         }
         return left;
     }
 
     private Node parseUnary() {
-        if (check(TokenType.INCREMENT)) {
-            Token t = consume();
-            String name = expect(TokenType.IDENTIFIER).value;
-            IncDecNode node = new IncDecNode(name, true, true);
-            node.line = t.line;
-            return node;
-        }
-        if (check(TokenType.DECREMENT)) {
-            Token t = consume();
-            String name = expect(TokenType.IDENTIFIER).value;
-            IncDecNode node = new IncDecNode(name, false, true);
-            node.line = t.line;
-            return node;
-        }
-        if (check(TokenType.MINUS) || check(TokenType.PLUS)) {
-            String op = consume().value;
-            return new UnaryOpNode(op, parseUnary());
-        }
-        if (check(TokenType.NOT)) {
+        Token operator = current();
+        if (isIncDec(operator.type)) {
             consume();
-            return new UnaryOpNode("NOT", parseUnary());
+            String name = expect(TokenType.IDENTIFIER).value;
+            return new IncDecNode(operator.line, name, operator.type == TokenType.INCREMENT, true);
+        }
+        if (check(TokenType.MINUS) || check(TokenType.PLUS) || check(TokenType.NOT)) {
+            consume();
+            // The minimum INT's magnitude is valid only directly beneath unary minus.
+            if (operator.type == TokenType.MINUS && check(TokenType.INT_LITERAL)) {
+                int negative = parseInteger(current(), "-" + current().value);
+                if (negative == Integer.MIN_VALUE) {
+                    consume();
+                    return new LiteralNode(operator.line, negative, ValueType.INT);
+                }
+            }
+            return new UnaryOpNode(operator.line, operator.value, parseUnary());
         }
         return parsePrimary();
     }
 
     private Node parsePrimary() {
-        Token t = current();
-        switch (t.type) {
-            case INT_LITERAL    -> { consume(); return new LiteralNode(Integer.parseInt(t.value),   "INT");    }
-            case FLOAT_LITERAL  -> { consume(); return new LiteralNode(Float.parseFloat(t.value),   "FLOAT");  }
-            case CHAR_LITERAL   -> { consume(); return new LiteralNode(t.value.charAt(0),           "CHAR");   }
-            case BOOL_LITERAL   -> { consume(); return new LiteralNode(t.value.equals("TRUE"),      "BOOL");   }
-            case STRING_LITERAL -> { consume(); return new LiteralNode(t.value,                     "STRING"); }
-            case IDENTIFIER -> {
-                // Token t = current();
-                String name = consume().value;
-                if (check(TokenType.INCREMENT)) {
-                    consume();
-                    IncDecNode node = new IncDecNode(name, true, false);
-                    node.line = t.line;
-                    return node;
-                }
-                if (check(TokenType.DECREMENT)) {
-                    consume();
-                    IncDecNode node = new IncDecNode(name, false, false);
-                    node.line = t.line;
-                    return node;
-                }
-                return new VariableNode(name);
-            }
-            case LPAREN -> {
+        Token token = current();
+        switch (token.type) {
+            case INT_LITERAL:
                 consume();
-                Node expr = parseExpression();
+                return new LiteralNode(token.line, parseInteger(token, token.value), ValueType.INT);
+            case FLOAT_LITERAL:
+                consume();
+                try {
+                    float value = Float.parseFloat(token.value);
+                    if (!Float.isFinite(value)) throw error(token, "FLOAT literal must be finite.");
+                    return new LiteralNode(token.line, value, ValueType.FLOAT);
+                } catch (NumberFormatException e) {
+                    throw error(token, "Invalid FLOAT literal '" + token.value + "'.");
+                }
+            case CHAR_LITERAL:
+                consume();
+                return new LiteralNode(token.line, token.value.charAt(0), ValueType.CHAR);
+            case BOOL_LITERAL:
+                consume();
+                return new LiteralNode(token.line, token.value.equals("TRUE"), ValueType.BOOL);
+            case STRING_LITERAL:
+                consume();
+                return new LiteralNode(token.line, token.value, ValueType.STRING);
+            case IDENTIFIER:
+                consume();
+                if (isIncDec(current().type)) {
+                    Token operator = consume();
+                    return new IncDecNode(operator.line, token.value, operator.type == TokenType.INCREMENT, false);
+                }
+                return new VariableNode(token.line, token.value);
+            case LPAREN:
+                consume();
+                Node expression = parseExpression();
                 expect(TokenType.RPAREN);
-                return expr;
-            }
-            default -> throw new LexorException(
-                    LexorException.Phase.PARSER, t.line, "Unexpected token '" + t.value + "'."
-            );
+                return expression;
+            default:
+                throw error(token, "Unexpected token '" + token.value + "'.");
         }
+    }
+
+    private int parseInteger(Token token, String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            throw error(token, "INT literal out of range: " + value + ".");
+        }
+    }
+
+    private static boolean isIncDec(TokenType type) {
+        return type == TokenType.INCREMENT || type == TokenType.DECREMENT;
+    }
+
+    private LexorException error(Token token, String message) {
+        return new LexorException(LexorException.Phase.PARSER, token.line, message);
     }
 }

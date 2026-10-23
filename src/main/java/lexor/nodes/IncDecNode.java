@@ -5,7 +5,8 @@ public class IncDecNode extends Node {
     public final boolean isIncrement;           // true = ++, false = --
     public final boolean isPrefix;              // true = ++x, false = x++
 
-    public IncDecNode(String name, boolean isIncrement, boolean isPrefix) {
+    public IncDecNode(int line, String name, boolean isIncrement, boolean isPrefix) {
+        super(line);
         this.name = name;
         this.isIncrement = isIncrement;
         this.isPrefix = isPrefix;

@@ -110,3 +110,48 @@ Input statement: **SCAN – allow the user to input a value to a data type. Synt
 
 **Note: You may use any language to implement the interpreter except Python and Javascript.** 
 
+## Implementation clarifications
+
+These rules resolve behavior left unspecified above and document the retained increment/decrement extension.
+
+### Source layout and literals
+
+- Each statement, control-flow header, and block marker occupies its own line. Expressions and compound keywords cannot span lines.
+- Blank lines and trailing `%%` comments are allowed. LF, CRLF, and CR are recognized as line endings. A final newline after `END SCRIPT` is optional.
+- Spaces and tabs may separate the words in a compound keyword. Keyword matching uses whole identifiers; all constituent reserved words are unavailable as variable names.
+- Quote delimiters are ASCII `'` and `"`. The typographic quotes and collapsed layout in the original examples are presentation formatting.
+- CHAR is one Java character (one UTF-16 code unit). Raw line endings are forbidden inside CHAR, string, and bracket-escape literals.
+- STRING is a printable literal type, not a declaration type. Bracket escapes print their single enclosed character; `$` emits LF without an implicit trailing newline.
+
+### Types, values, and operators
+
+- INT is signed 32-bit, from `-2147483648` through `2147483647`. FLOAT uses Java's 32-bit floating-point representation.
+- A unary minus immediately before the magnitude `2147483648` forms the minimum INT, including leading zeros. Bare `2147483648` and `-(2147483648)` are invalid positive literals.
+- Uninitialized INT, FLOAT, CHAR, and BOOL variables default to `0`, `0.0`, the null character, and `FALSE`. Printing the null character produces no text.
+- Assignment accepts matching types and INT-to-FLOAT promotion. Every assignment preserves the target's declared type. Chained assignments evaluate from right to left.
+- Arithmetic requires numeric operands. INT division truncates toward zero; mixed arithmetic produces FLOAT. Overflow is an error, including unary negation and `INT_MIN / -1`. `INT_MIN % -1` is zero.
+- Division and modulo reject a zero divisor for both numeric types. NaN, Infinity, and non-finite results are errors. Finite FLOAT underflow follows Java float rounding.
+- Numeric comparisons allow mixed INT/FLOAT operands. Comparison uses exact widening to `double`, without changing the variables' storage types. Positive and negative zero compare equal.
+- BOOL and CHAR support only same-type `==` and `<>`. STRING comparisons and BOOL/CHAR ordering are invalid.
+- `AND` and `OR` evaluate left to right and skip the right operand when its value is unnecessary. Semantic analysis checks both operands regardless of runtime evaluation.
+- The retained `++` and `--` extensions accept INT/FLOAT variables. Prefix returns the updated value; postfix returns the old value. Both support standalone statements and FOR updates. Overflow leaves the target unchanged.
+- FLOAT output uses `Float.toString`, independent of locale and without fixed decimal rounding. Scientific notation is permitted. BOOL output is uppercase `TRUE` or `FALSE`.
+- `REPEAT WHEN` checks its condition before each iteration, so its body may execute zero times.
+
+### Input and diagnostics
+
+- SCAN reads one input line with exactly one comma-separated field per target. It validates all fields before assigning any values.
+- Numeric and BOOL fields ignore surrounding whitespace. BOOL input is exactly `TRUE` or `FALSE` after trimming.
+- CHAR input preserves whitespace and requires exactly one character. A single space is valid; an empty field or multiple characters are invalid.
+- End-of-input, wrong field counts, invalid values, and numeric range errors produce runtime diagnostics at the SCAN statement's line.
+- Language errors report their phase and a one-based source line. The command-line interface returns a nonzero exit code for failures.
+
+### Executable examples
+
+The following files preserve the original examples using executable source layout and ASCII quotes:
+
+- [Introduction example](examples/specification-sample.lxr): outputs `4TRUE5`, LF, then `c#last`.
+- [Arithmetic example](examples/specification-arithmetic.lxr): outputs `[-60]`.
+- [Logical example](examples/specification-logic.lxr): outputs `TRUE`.
+- [Increment/decrement extension](examples/inc-dec.lxr): preserves the previous embedded demo.
+

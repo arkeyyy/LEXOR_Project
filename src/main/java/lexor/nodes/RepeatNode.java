@@ -7,7 +7,8 @@ public class RepeatNode extends Node{
     public final Node condition;
     public final List<Node> body;
 
-    public RepeatNode(Node condition, List<Node> body) {
+    public RepeatNode(int line, Node condition, List<Node> body) {
+        super(line);
         this.condition = condition;
         this.body = body;
     }
