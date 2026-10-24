@@ -36,10 +36,32 @@ On Windows:
 
 ```powershell
 .\mvnw.cmd verify
-java -jar target/Lexor_Project-1.0-SNAPSHOT.jar myprogram.lxr
+java -jar target/Lexor_Project-1.0-SNAPSHOT.jar
 ```
 
-On macOS or Linux:
+Select a `.lxr` file in the picker, which starts in the current directory. Cancelling exits successfully. LEXOR opens a separate native terminal for the selected script: enter values for `SCAN` and see `PRINT` output as it runs. The terminal shows the exit status after execution and waits at `Press Enter to close...`, including when the script reports an error.
+
+Supply a script path to skip the picker and open its terminal directly:
+
+```powershell
+java -jar target/Lexor_Project-1.0-SNAPSHOT.jar myprogram.lxr
+java -jar target/Lexor_Project-1.0-SNAPSHOT.jar --debug "examples/inc-dec.lxr"
+```
+
+Closing the terminal while a script is running stops that script. Stopping the launcher also terminates its owned terminal session. Each launch runs one script, using the original working directory. Running `lexor.Main` from an IDE or through `java -cp target/classes lexor.Main` uses the same Windows flow.
+
+Use `--console` to run inside the existing terminal, including redirected input and automation. This mode writes only script output to stdout, with errors and optional `--debug` traces on stderr; it has no picker, completion message, or closing prompt.
+
+```powershell
+java -jar target/Lexor_Project-1.0-SNAPSHOT.jar --console myprogram.lxr
+"3" | java -jar target/Lexor_Project-1.0-SNAPSHOT.jar --console myprogram.lxr
+java -jar target/Lexor_Project-1.0-SNAPSHOT.jar --console --debug "examples/inc-dec.lxr"
+java -jar target/Lexor_Project-1.0-SNAPSHOT.jar --help
+```
+
+`--help` never opens a window. Put options before the script path. Use `--debug` without a script on Windows to select a file and show diagnostic traces in its terminal.
+
+On macOS, Linux, or a headless system, execution stays in the existing terminal and requires a script path:
 
 ```sh
 sh mvnw verify
@@ -48,13 +70,9 @@ java -jar target/Lexor_Project-1.0-SNAPSHOT.jar myprogram.lxr
 
 Quote script paths containing spaces. Source files use UTF-8. `SCAN` reads comma-separated values from standard input.
 
-```powershell
-java -jar target/Lexor_Project-1.0-SNAPSHOT.jar "examples/specification-sample.lxr"
-java -jar target/Lexor_Project-1.0-SNAPSHOT.jar --debug "examples/inc-dec.lxr"
-java -jar target/Lexor_Project-1.0-SNAPSHOT.jar --help
-```
+If a Windows JDK misreads non-ASCII paths passed on the command line, select the script with the file picker. The windowed session preserves Unicode paths and input.
 
-Normal execution writes only the script's output to stdout. Errors and optional `--debug` traces go to stderr. Exit codes are `0` for success/help, `1` for language or execution errors, and `2` for invalid arguments or unreadable files.
+Exit codes are `0` for success, help, or picker cancellation; `1` for language or execution errors; and `2` for invalid arguments, unreadable files, or terminal launch failures. Launch failures also appear in a dialog. The windowed launcher returns the script's exit code after the terminal closes.
 
 The [language specification](Language%20Specification%20of%20LEXOR.md) includes implementation clarifications. Runnable versions of its examples are in [`examples/`](examples/). The original increment/decrement demo is preserved in [`examples/inc-dec.lxr`](examples/inc-dec.lxr).
 
