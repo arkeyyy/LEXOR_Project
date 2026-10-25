@@ -6,11 +6,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.Objects;
-import java.util.Properties;
 
 /** Runs inside the newly opened console, without dispatching another window. */
 public final class TerminalSession {
@@ -27,8 +24,7 @@ public final class TerminalSession {
             String sessionDirectory = System.getenv("LEXOR_SESSION_DIRECTORY");
             if (sessionDirectory != null) {
                 directory = Path.of(sessionDirectory);
-                Files.writeString(directory.resolve("session.started"),
-                        Long.toString(ProcessHandle.current().pid()), StandardCharsets.US_ASCII);
+                SessionProtocol.recordStarted(directory);
             }
             if (!watchLauncher()) {
                 err.println("LEXOR launcher has exited.");
@@ -37,21 +33,28 @@ public final class TerminalSession {
             }
             String argumentsFile = System.getenv("LEXOR_SESSION_ARGUMENTS_FILE");
             String[] scriptArgs = argumentsFile == null ? args : readArguments(Path.of(argumentsFile));
-            status = run(scriptArgs, System.in, out, err);
+            status = Main.run(scriptArgs, System.in, out, err);
         } catch (IOException | RuntimeException e) {
             err.println("Cannot start terminal session: " + e.getMessage());
-            status = finish(2, System.in, out, err);
+            status = 2;
         }
+        System.exit(complete(status, directory, System.in, out, err));
+    }
+
+    /** Persist completion before any prompt can invite the user to close the console. */
+    static int complete(int status, Path directory, InputStream in, PrintStream out, PrintStream err) {
         if (directory != null) {
             try {
-                Files.writeString(directory.resolve("session.exit"), Integer.toString(status),
-                        StandardCharsets.US_ASCII);
-            } catch (IOException e) {
+                SessionProtocol.recordCompletion(directory, status);
+            } catch (IOException | RuntimeException e) {
                 err.println("Cannot save terminal exit status: " + e.getMessage());
-                status = 2;
+                err.flush();
+                out.flush();
+                // Do not wait for closure with an unrecorded successful result.
+                return 2;
             }
         }
-        System.exit(status);
+        return finish(status, in, out, err);
     }
 
     private static boolean watchLauncher() {
@@ -70,31 +73,13 @@ public final class TerminalSession {
     }
 
     static String[] readArguments(Path file) throws IOException {
-        Properties properties = new Properties();
-        try (InputStream input = Files.newInputStream(file)) {
-            properties.load(input);
-        }
-        int count;
-        try {
-            count = Integer.parseInt(properties.getProperty("args.count", ""));
-        } catch (NumberFormatException e) {
-            throw new IOException("Invalid session argument count.", e);
-        }
-        // A session accepts a script path and optional --debug; reject corrupt transport files.
-        if (count < 1 || count > 2) throw new IOException("Invalid session argument count.");
-        String[] args = new String[count];
-        for (int i = 0; i < count; i++) {
-            args[i] = properties.getProperty("arg." + i);
-            if (args[i] == null) throw new IOException("Missing session argument " + i + ".");
-        }
-        return args;
+        return SessionProtocol.readArguments(file);
     }
 
     /** Leaves the caller's streams open and preserves the interpreter's exit code. */
     static int run(String[] args, InputStream in, PrintStream out, PrintStream err) {
-        InputStream lines = new LineInputStream(in);
-        int status = Main.run(args, lines, out, err);
-        return finish(status, lines, out, err);
+        int status = Main.run(args, in, out, err);
+        return complete(status, null, in, out, err);
     }
 
     private static int finish(int status, InputStream in, PrintStream out, PrintStream err) {
@@ -110,41 +95,10 @@ public final class TerminalSession {
             }
         } catch (IOException e) {
             err.println("Cannot wait for Enter: " + e.getMessage());
+        } finally {
+            err.flush();
+            out.flush();
         }
         return status;
-    }
-
-    /**
-     * Scanner owns a reader buffer. Limit each fill to one line so pasted SCAN values
-     * and the closing Enter remain available to their respective consumers.
-     */
-    private static final class LineInputStream extends InputStream {
-        private final InputStream input;
-
-        private LineInputStream(InputStream input) {
-            this.input = Objects.requireNonNull(input);
-        }
-
-        @Override
-        public int read() throws IOException {
-            return input.read();
-        }
-
-        @Override
-        public int read(byte[] bytes, int offset, int length) throws IOException {
-            Objects.checkFromIndexSize(offset, length, bytes.length);
-            if (length == 0) return 0;
-            int count = 0;
-            while (count < length) {
-                int next = input.read();
-                if (next == -1) return count == 0 ? -1 : count;
-                bytes[offset + count++] = (byte) next;
-                if (next == '\n') break;
-            }
-            return count;
-        }
-
-        // Keep InputStream.available() == 0: InputStreamReader must not prefetch another line.
-        // Keep InputStream.close() a no-op: this wrapper never owns the caller's stream.
     }
 }

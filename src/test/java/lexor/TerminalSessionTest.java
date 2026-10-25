@@ -14,6 +14,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Properties;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -23,6 +24,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class TerminalSessionTest {
     @TempDir Path directory;
@@ -216,6 +220,77 @@ class TerminalSessionTest {
         } finally {
             process.destroyForcibly();
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0,false", "1,false", "2,false", "0,true", "1,true", "2,true"})
+    void completedStatusSurvivesEnterAndTerminationWhileWaiting(int status, boolean terminate)
+            throws Exception {
+        Path file = status == 2 ? directory.resolve("missing.lxr")
+                : script(status == 1 ? "PRINT: 1 / 0" : "PRINT: 42");
+        ProcessBuilder builder = javaProcess(TerminalSession.class, file.toString());
+        builder.environment().put("LEXOR_SESSION_DIRECTORY", directory.toString());
+        setLauncher(builder, ProcessHandle.current());
+        Process process = builder.redirectErrorStream(true).start();
+        try {
+            assertTimeoutPreemptively(Duration.ofSeconds(10), () -> {
+                while (!Files.exists(directory.resolve(SessionProtocol.COMPLETED))) {
+                    assertTrue(process.isAlive(), "Session exited without publishing its result");
+                    Thread.sleep(10);
+                }
+            });
+            assertEquals(Integer.toString(status), Files.readString(directory.resolve(SessionProtocol.COMPLETED)));
+            assertFalse(Files.exists(directory.resolve(SessionProtocol.COMPLETION_TEMP)));
+            assertTrue(process.isAlive(), "Session should be waiting for Enter");
+            if (terminate) process.destroyForcibly();
+            else {
+                process.getOutputStream().write('\n');
+                process.getOutputStream().flush();
+            }
+            assertTrue(process.waitFor(10, TimeUnit.SECONDS));
+            if (!terminate) assertEquals(status, process.exitValue());
+            assertEquals(status, SessionProtocol.completionStatus(directory, process.exitValue()));
+        } finally {
+            process.destroyForcibly();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2})
+    void publishesBeforeDisplayingCompletion(int status) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        PrintStream stream = new PrintStream(output, true, StandardCharsets.UTF_8) {
+            @Override public void println(String message) {
+                if (message.startsWith("LEXOR finished")) {
+                    try {
+                        assertEquals(status, SessionProtocol.completionStatus(directory, -1));
+                    } catch (IOException e) {
+                        fail(e);
+                    }
+                }
+                super.println(message);
+            }
+        };
+        assertEquals(status, TerminalSession.complete(status, directory, input("\n"), stream, stream));
+        assertEquals(completion(status), output.toString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void publicationFailureIsAnInfrastructureErrorWithoutAnUnrecordedWait() throws IOException {
+        Path blocked = Files.createDirectory(directory.resolve(SessionProtocol.COMPLETED));
+        Files.writeString(blocked.resolve("unrelated"), "keep");
+        ByteArrayOutputStream error = new ByteArrayOutputStream();
+        InputStream unread = new InputStream() {
+            @Override public int read() {
+                fail("An unrecorded completion must not wait for Enter");
+                return -1;
+            }
+        };
+        PrintStream stream = new PrintStream(error, true, StandardCharsets.UTF_8);
+        assertEquals(2, TerminalSession.complete(0, directory, unread, stream, stream));
+        assertTrue(error.toString(StandardCharsets.UTF_8).contains("Cannot save terminal exit status:"));
+        assertFalse(error.toString(StandardCharsets.UTF_8).contains("Press Enter"));
+        assertEquals("keep", Files.readString(blocked.resolve("unrelated")));
     }
 
     @Test

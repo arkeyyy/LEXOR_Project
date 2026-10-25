@@ -22,11 +22,12 @@ public class Interpreter {
 
     public Interpreter(SymbolTable symbolTable, InputStream input, PrintStream output) {
         this.symbolTable = symbolTable;
-        this.scanner = new Scanner(input, StandardCharsets.UTF_8);
+        this.scanner = new Scanner(new LineInputStream(input), StandardCharsets.UTF_8);
         this.output = output;
     }
 
     public void execute(ProgramNode program) {
+        ComplexityLimits.validateAst(program, RUNTIME);
         executeBlock(program.statements);
     }
 
@@ -59,6 +60,7 @@ public class Interpreter {
         StringBuilder text = new StringBuilder();
         for (Node part : node.parts) text.append(formatValue(evaluate(part)));
         output.print(text);
+        if (output.checkError()) throw error(node.line, "Cannot write PRINT output.");
     }
 
     private String formatValue(Object value) {
@@ -70,10 +72,14 @@ public class Interpreter {
 
     private void executeScan(ScanNode node) {
         output.flush();
-        if (!scanner.hasNextLine()) {
+        boolean hasLine = scanner.hasNextLine();
+        checkInput(node.line);
+        if (!hasLine) {
             throw error(node.line, "Expected input for SCAN, but reached end of input.");
         }
-        String[] inputs = scanner.nextLine().split(",", -1);
+        String line = scanner.nextLine();
+        checkInput(node.line);
+        String[] inputs = line.split(",", -1);
         if (inputs.length != node.variables.size()) {
             throw error(node.line, "SCAN expected " + node.variables.size()
                     + " values, got " + inputs.length + ".");
@@ -108,6 +114,12 @@ public class Interpreter {
 
         for (int i = 0; i < values.size(); i++) {
             symbolTable.setValue(node.variables.get(i), values.get(i), node.line);
+        }
+    }
+
+    private void checkInput(int line) {
+        if (scanner.ioException() != null) {
+            throw error(line, "Cannot read SCAN input: " + scanner.ioException().getMessage());
         }
     }
 

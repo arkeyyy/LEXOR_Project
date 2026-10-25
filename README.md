@@ -48,7 +48,7 @@ java -jar target/Lexor_Project-1.0-SNAPSHOT.jar myprogram.lxr
 java -jar target/Lexor_Project-1.0-SNAPSHOT.jar --debug "examples/inc-dec.lxr"
 ```
 
-Closing the terminal while a script is running stops that script. Stopping the launcher also terminates its owned terminal session. Each launch runs one script, using the original working directory. Running `lexor.Main` from an IDE or through `java -cp target/classes lexor.Main` uses the same Windows flow.
+Closing the terminal while a script is running stops that script and returns the process's interruption status. After completion, pressing Enter or closing the window preserves the script's recorded exit code. Stopping the launcher also terminates its owned terminal session. Each launch runs one script, using the original working directory, including Windows UNC network shares. Running `lexor.Main` from an IDE or through `java -cp target/classes lexor.Main` uses the same Windows flow.
 
 Use `--console` to run inside the existing terminal, including redirected input and automation. This mode writes only script output to stdout, with errors and optional `--debug` traces on stderr; it has no picker, completion message, or closing prompt.
 
@@ -68,11 +68,26 @@ sh mvnw verify
 java -jar target/Lexor_Project-1.0-SNAPSHOT.jar myprogram.lxr
 ```
 
-Quote script paths containing spaces. Source files use UTF-8. `SCAN` reads comma-separated values from standard input.
+Quote script paths containing spaces. Source files use UTF-8 and may start with one BOM. `SCAN` reads comma-separated values from standard input.
 
 If a Windows JDK misreads non-ASCII paths passed on the command line, select the script with the file picker. The windowed session preserves Unicode paths and input.
 
-Exit codes are `0` for success, help, or picker cancellation; `1` for language or execution errors; and `2` for invalid arguments, unreadable files, or terminal launch failures. Launch failures also appear in a dialog. The windowed launcher returns the script's exit code after the terminal closes.
+Exit codes are `0` for success, help, or picker cancellation; `1` for language or execution errors; and `2` for invalid arguments, unreadable files, or terminal infrastructure failures. Launch failures also appear in a dialog. The session atomically records completion before showing its closing prompt; failure to record it reports an infrastructure error. Cleanup attempts every owned temporary file, preserves unrelated files, and reports leftovers on launcher stderr without changing a completed script's status.
+
+For embedded callers, `Main.run(String[], InputStream, PrintStream, PrintStream)` leaves all caller streams open and flushes output and diagnostics on every return. Consecutive runs can share LF/CRLF input without consuming each other's lines. SCAN read failures and PRINT write/flush failures report runtime errors at the statement's source line.
+
+### Verification
+
+`mvnw.cmd verify` on Windows, or `sh mvnw verify` on macOS/Linux, runs the unit suite, builds the JAR, and runs packaged-JAR integration tests through Maven Failsafe. The integration tests cover console/debug/help modes, redirected input, and headless execution without opening windows. GitHub Actions runs the same command on Windows, Ubuntu, and macOS with Temurin Java 23 for pushes and pull requests.
+
+Native Windows window tests are opt-in and require an interactive desktop and a built JAR. Full window-closure coverage requires Windows Console Host; Windows Terminal's pseudoconsole does not expose the terminal's actual window through `GetConsoleWindow`, so those cases are explicitly reported as skipped on that host. See Microsoft's [console window documentation](https://learn.microsoft.com/en-us/windows/console/getconsolewindow).
+
+```powershell
+.\tools\windows-smoke.ps1
+.\tools\windows-smoke.ps1 -UncDirectory '\\server\share\existing-folder'
+```
+
+The smoke suite applies timeouts to each case and tracks its owned windows and processes. It checks picker cancellation, repeated SCAN, a space CHAR, Unicode and shell metacharacter paths, completion codes, closing an infinite loop, and process cleanup. It prints pass/skip counts and exits with `2` when the console host prevents full window-closure coverage. Network-share verification is reported as skipped when no UNC directory is supplied. Use an existing writable share for that optional case.
 
 The [language specification](Language%20Specification%20of%20LEXOR.md) includes implementation clarifications. Runnable versions of its examples are in [`examples/`](examples/). The original increment/decrement demo is preserved in [`examples/inc-dec.lxr`](examples/inc-dec.lxr).
 
@@ -81,12 +96,14 @@ The [language specification](Language%20Specification%20of%20LEXOR.md) includes 
 - Put each statement, header, and block marker on its own line. Blank lines and `%%` comments are allowed.
 - Use ASCII `'` and `"` quote delimiters. Strings are printable literals; declared variables use `INT`, `FLOAT`, `CHAR`, or `BOOL`.
 - Numeric assignments allow `INT` to `FLOAT` promotion. Integer arithmetic is checked for overflow; FLOAT values use 32-bit precision.
+- Source numbers use decimal digits, with digits required on both sides of a FLOAT decimal point (for example, `1.5`). Signs are unary operators; source exponents, hexadecimal notation, suffixes, `.5`, and `5.` are unsupported. SCAN retains Java numeric conversions, including exponent and hexadecimal FLOAT input.
 - Division or modulo by zero, overflow, and non-finite FLOAT values produce source-positioned errors.
 - `AND` and `OR` short-circuit at runtime. Both operands must still pass semantic checks.
 - Mixed INT/FLOAT comparisons are supported. BOOL and CHAR support same-type equality/inequality, but not ordering.
 - `++` and `--` are supported extensions. Prefix returns the updated value; postfix returns the previous value.
 - `SCAN` requires exactly one field per target. Invalid input leaves every target unchanged. CHAR input must contain exactly one character, including a single space.
 - FLOAT output uses locale-independent decimal notation and may use scientific notation for very large or small values.
+- Parser nesting has a shared limit of 128 across active control statements, assignments, unary operators, and expression parentheses. AST depth is limited to 256, counting the root as depth one; long flat expressions also count toward this limit. Violations produce a phase and source-line diagnostic. These are structure limits; execution has no timer or iteration limit.
 
 ---
 

@@ -3,8 +3,10 @@ package lexor;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.File;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -134,7 +136,13 @@ class WindowsTerminalLauncherTest {
                 assertTrue(contents.contains("DisableDelayedExpansion"));
             }
             assertTrue(Files.readString(launch.resolve("launch.cmd")).contains("/wait"));
-            assertTrue(Files.readString(launch.resolve("session.cmd")).contains("chcp 65001"));
+            String session = Files.readString(launch.resolve("session.cmd"));
+            assertTrue(session.contains("chcp 65001"));
+            assertTrue(session.contains("EnableExtensions DisableDelayedExpansion"));
+            assertTrue(session.contains("pushd \"%LEXOR_WORKING_DIRECTORY%\""));
+            assertFalse(session.contains("cd /d"));
+            assertTrue(session.indexOf("set \"LEXOR_EXIT_CODE=%errorlevel%\"") < session.indexOf("popd"));
+            assertTrue(session.indexOf("popd") < session.indexOf("exit /b %LEXOR_EXIT_CODE%"));
             if (File.separatorChar == '\\') {
                 ProcessBuilder builder = files.processBuilder();
                 assertEquals(launch.toFile(), builder.directory());
@@ -142,6 +150,7 @@ class WindowsTerminalLauncherTest {
                 assertEquals(javaHome().resolve("bin/java.exe").toString(),
                         builder.environment().get("LEXOR_JAVA"));
                 assertTrue(builder.command().contains("/d"));
+                assertTrue(builder.command().contains("/e:on"));
                 assertTrue(builder.command().contains("/v:off"));
             }
         }
@@ -175,7 +184,7 @@ class WindowsTerminalLauncherTest {
         Path launch = Files.createDirectory(directory.resolve("session"));
         var files = WindowsTerminalLauncher.prepare(launch, directory, javaHome(),
                 System.getProperty("java.class.path"), new String[] {"program.lxr"});
-        for (String name : List.of("launch.log", "session.started", "session.exit")) {
+        for (String name : List.of("launch.log", "session.started", "session.exit", "session.exit.tmp")) {
             Files.writeString(launch.resolve(name), "0");
         }
         files.close();
@@ -200,6 +209,83 @@ class WindowsTerminalLauncherTest {
         assertThrows(IOException.class, files::close);
         assertEquals("keep", Files.readString(unrelated));
         assertFalse(Files.exists(launch.resolve("java.args")));
+    }
+
+    @Test
+    void cleanupContinuesAfterFailureAndReportsEveryLeftover() throws Exception {
+        Path launch = Files.createDirectory(directory.resolve("session"));
+        var files = WindowsTerminalLauncher.prepare(launch, directory, javaHome(),
+                System.getProperty("java.class.path"), new String[] {"program.lxr"});
+        // A nonempty directory makes the first owned-file deletion fail on every platform.
+        Files.delete(launch.resolve(SessionProtocol.LAUNCH));
+        Path blocked = Files.createDirectory(launch.resolve(SessionProtocol.LAUNCH));
+        Path unrelated = Files.writeString(blocked.resolve("keep.lxr"), "keep");
+        Files.writeString(launch.resolve(SessionProtocol.COMPLETION_TEMP), "0");
+        SessionProtocol.recordCompletion(launch, 1);
+        ByteArrayOutputStream diagnostics = new ByteArrayOutputStream();
+        int result;
+        try {
+            result = SessionProtocol.completionStatus(launch, -1);
+        } finally {
+            files.closeAndReport(new PrintStream(diagnostics, true, StandardCharsets.UTF_8));
+        }
+        assertEquals(1, result);
+        assertEquals("keep", Files.readString(unrelated));
+        for (String name : SessionProtocol.OWNED_FILES) {
+            if (!name.equals(SessionProtocol.LAUNCH)) assertFalse(Files.exists(launch.resolve(name)), name);
+        }
+        String warning = diagnostics.toString(StandardCharsets.UTF_8);
+        assertTrue(warning.contains("Cannot remove terminal files"), warning);
+        assertTrue(warning.contains(blocked.toString()), warning);
+        assertTrue(warning.contains(launch.toString()), warning);
+    }
+
+    @Test
+    void sessionDirectoryUsesLocalAsciiFallbackWithoutWritingInTheWorkingDirectory() throws Exception {
+        Path working = Files.createDirectory(directory.resolve("working"));
+        Path unicodeTemp = Files.createDirectory(directory.resolve("temp \u4e2d"));
+        Path fallback = Files.createDirectory(directory.resolve("ascii-temp"));
+        Path session = WindowsTerminalLauncher.createSessionDirectory(working,
+                List.of(unicodeTemp, directory.resolve("missing"), fallback));
+        try {
+            assertEquals(fallback, session.getParent());
+            assertNotNull(WindowsTerminalLauncher.asciiLaunchPath(session.resolve("java.args"), working));
+            try (var entries = Files.list(working)) {
+                assertEquals(0, entries.count());
+            }
+        } finally {
+            Files.delete(session);
+        }
+    }
+
+    @Test
+    void unusableTemporaryDirectoriesProduceAnInfrastructureDiagnostic() throws Exception {
+        Path working = Files.createDirectory(directory.resolve("working"));
+        Path unicodeTemp = Files.createDirectory(directory.resolve("temp \u4e2d"));
+        IOException error = assertThrows(IOException.class, () ->
+                WindowsTerminalLauncher.createSessionDirectory(working,
+                        List.of(unicodeTemp, directory.resolve("missing"))));
+        assertTrue(error.getMessage().contains("local ASCII-safe"));
+        assertEquals(1, error.getSuppressed().length);
+    }
+
+    @Test
+    void corruptCompletionStatusIsNeverAccepted() throws IOException {
+        assertEquals(-1073741510, SessionProtocol.completionStatus(directory, -1073741510));
+        for (String invalid : List.of("", "no", "-1", "3", "9999999999999")) {
+            Files.writeString(directory.resolve(SessionProtocol.COMPLETED), invalid);
+            assertThrows(IOException.class, () -> SessionProtocol.completionStatus(directory, 0), invalid);
+        }
+    }
+
+    @Test
+    void unpublishedInfrastructureFailureIsReportedToTheLauncher() throws IOException {
+        IOException error = assertThrows(IOException.class,
+                () -> SessionProtocol.completionStatus(directory, 2));
+        assertEquals("Terminal session ended without publishing its completion status (exit code 2).",
+                error.getMessage());
+        SessionProtocol.recordCompletion(directory, 2);
+        assertEquals(2, SessionProtocol.completionStatus(directory, 2));
     }
 
     @Test

@@ -93,6 +93,15 @@ public final class Main {
 
     /** Executes one script without closing the caller's streams or terminating the JVM. */
     public static int run(String[] args, InputStream in, PrintStream out, PrintStream err) {
+        try {
+            return runScript(args, in, out, err);
+        } finally {
+            out.flush();
+            err.flush();
+        }
+    }
+
+    private static int runScript(String[] args, InputStream in, PrintStream out, PrintStream err) {
         Options options = Options.parse(args);
         if (options != null && options.help()) {
             out.println(USAGE);
@@ -118,7 +127,6 @@ public final class Main {
             if (debug) err.println("Semantic analysis passed.");
 
             new Interpreter(analyzer.getSymbolTable(), in, out).execute(program);
-            out.flush();
             return 0;
         } catch (LexorException e) {
             err.println(e.getMessage());

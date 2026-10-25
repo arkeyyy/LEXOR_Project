@@ -2,7 +2,7 @@ package lexor;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.OutputStream;
+import java.io.PrintStream;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -28,19 +27,30 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 final class WindowsTerminalLauncher implements Main.WindowSupport {
     private static final String LAUNCH_SCRIPT = """
             @echo off
-            setlocal DisableDelayedExpansion
-            start "LEXOR" /wait "%LEXOR_CMD%" /d /s /v:off /c session.cmd
+            setlocal EnableExtensions DisableDelayedExpansion
+            start "LEXOR" /wait "%LEXOR_CMD%" /d /e:on /s /v:off /c session.cmd
             exit /b %errorlevel%
             """;
     private static final String SESSION_SCRIPT = """
             @echo off
-            setlocal DisableDelayedExpansion
+            setlocal EnableExtensions DisableDelayedExpansion
             chcp 65001 >nul
-            cd /d "%LEXOR_WORKING_DIRECTORY%"
+            pushd "%LEXOR_WORKING_DIRECTORY%"
             if errorlevel 1 exit /b 2
             "%LEXOR_JAVA%" "@%LEXOR_ARGUMENT_FILE%"
-            exit /b %errorlevel%
+            set "LEXOR_EXIT_CODE=%errorlevel%"
+            popd
+            exit /b %LEXOR_EXIT_CODE%
             """;
+    private final PrintStream diagnostics;
+
+    WindowsTerminalLauncher() {
+        this(System.err);
+    }
+
+    WindowsTerminalLauncher(PrintStream diagnostics) {
+        this.diagnostics = diagnostics;
+    }
 
     @Override
     public Path chooseScript() throws IOException, InterruptedException {
@@ -87,19 +97,14 @@ final class WindowsTerminalLauncher implements Main.WindowSupport {
     @Override
     public int launch(String[] args) throws IOException, InterruptedException {
         Path workingDirectory = Path.of("").toAbsolutePath().normalize();
-        Path directory = Files.createTempDirectory("lexor-terminal-");
-        // Windows Java launchers can use an ANSI code page even after chcp 65001.
-        // Keep launcher arguments ASCII; manifest URLs and Properties carry Unicode.
-        if (asciiLaunchPath(directory, workingDirectory) == null) {
-            Files.delete(directory);
-            directory = Files.createTempDirectory(workingDirectory, ".lexor-session-");
-        }
-        try (LaunchFiles files = prepare(directory, workingDirectory,
-                Path.of(System.getProperty("java.home")), System.getProperty("java.class.path"), args)) {
+        Path directory = createSessionDirectory(workingDirectory);
+        LaunchFiles files = prepare(directory, workingDirectory,
+                Path.of(System.getProperty("java.home")), System.getProperty("java.class.path"), args);
+        try {
             OwnedProcess owner = new OwnedProcess();
             Thread shutdown = new Thread(() -> {
                 owner.close();
-                files.closeQuietly();
+                files.closeAndReport(diagnostics);
             }, "lexor-terminal-shutdown");
             Runtime.getRuntime().addShutdownHook(shutdown);
             try {
@@ -107,21 +112,13 @@ final class WindowsTerminalLauncher implements Main.WindowSupport {
                 owner.start(builder);
                 while (!owner.process().waitFor(500, TimeUnit.MILLISECONDS)) owner.capture();
                 int status = owner.process().exitValue();
-                if (!Files.exists(directory.resolve("session.started"))) {
-                    String diagnostics = Files.readString(directory.resolve("launch.log")).strip();
+                if (!Files.exists(directory.resolve(SessionProtocol.STARTED))) {
+                    String diagnostics = Files.readString(directory.resolve(SessionProtocol.LOG)).strip();
                     throw new IOException("Java could not start (exit code " + status + ")."
                             + (diagnostics.isEmpty() ? "" : System.lineSeparator() + diagnostics));
                 }
-                Path completion = directory.resolve("session.exit");
-                if (Files.exists(completion)) {
-                    try {
-                        return Integer.parseInt(Files.readString(completion).strip());
-                    } catch (NumberFormatException e) {
-                        throw new IOException("Invalid terminal completion status", e);
-                    }
-                }
-                // Closing the console interrupts Java before it can record completion.
-                return status;
+                // After completion the recorded result wins, even if the window was closed.
+                return SessionProtocol.completionStatus(directory, status);
             } finally {
                 owner.close();
                 try {
@@ -130,25 +127,40 @@ final class WindowsTerminalLauncher implements Main.WindowSupport {
                     // Shutdown is already running the hook, which owns the same resources.
                 }
             }
+        } finally {
+            // A completed script's result is independent of leftover launch files.
+            files.closeAndReport(diagnostics);
         }
+    }
+
+    private static Path createSessionDirectory(Path workingDirectory) throws IOException {
+        List<Path> candidates = new ArrayList<>();
+        candidates.add(Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize());
+        String systemRoot = System.getenv("SystemRoot");
+        if (systemRoot != null) candidates.add(Path.of(systemRoot, "Temp"));
+        return createSessionDirectory(workingDirectory, candidates);
+    }
+
+    static Path createSessionDirectory(Path workingDirectory, List<Path> candidates) throws IOException {
+        IOException failure = new IOException("Cannot create a local ASCII-safe terminal temporary directory.");
+        for (Path candidate : candidates) {
+            // cmd.exe cannot start with a UNC current directory. Never bootstrap on the share.
+            if (!candidate.isAbsolute() || candidate.toString().startsWith("\\\\")) continue;
+            if (asciiLaunchPath(candidate.resolve("lexor-terminal-probe"), workingDirectory) == null) continue;
+            try {
+                return Files.createTempDirectory(candidate, "lexor-terminal-");
+            } catch (IOException e) {
+                failure.addSuppressed(e);
+            }
+        }
+        throw failure;
     }
 
     static LaunchFiles prepare(Path directory, Path workingDirectory, Path javaHome,
             String classPath, String[] args) throws IOException {
         LaunchFiles files = new LaunchFiles(directory, workingDirectory, javaHome);
         try {
-            Properties arguments = new Properties();
-            arguments.setProperty("args.count", Integer.toString(args.length));
-            for (int i = 0; i < args.length; i++) {
-                String argument = args[i];
-                if (i == args.length - 1) {
-                    argument = workingDirectory.resolve(argument).normalize().toString();
-                }
-                arguments.setProperty("arg." + i, argument);
-            }
-            try (OutputStream output = Files.newOutputStream(directory.resolve("session.properties"))) {
-                arguments.store(output, "LEXOR session arguments");
-            }
+            SessionProtocol.writeArguments(directory, workingDirectory, args);
             Manifest manifest = new Manifest();
             manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
             List<String> locations = new ArrayList<>();
@@ -157,20 +169,20 @@ final class WindowsTerminalLauncher implements Main.WindowSupport {
             }
             manifest.getMainAttributes().put(Attributes.Name.CLASS_PATH, String.join(" ", locations));
             try (JarOutputStream output = new JarOutputStream(
-                    Files.newOutputStream(directory.resolve("classpath.jar")), manifest)) {
+                    Files.newOutputStream(directory.resolve(SessionProtocol.CLASS_PATH)), manifest)) {
                 // A manifest-only JAR avoids the native launcher's lossy Unicode conversion.
             }
-            String bootstrap = asciiLaunchPath(directory.resolve("classpath.jar"), workingDirectory);
+            String bootstrap = asciiLaunchPath(directory.resolve(SessionProtocol.CLASS_PATH), workingDirectory);
             if (bootstrap == null) throw new IOException("Cannot create an ASCII-safe launcher path");
-            Files.writeString(directory.resolve("java.args"), argumentFile(List.of(
+            Files.writeString(directory.resolve(SessionProtocol.JAVA_ARGUMENTS), argumentFile(List.of(
                     "-Dfile.encoding=UTF-8", "-Dstdin.encoding=UTF-8", "-Dstdout.encoding=UTF-8",
                     "-Dstderr.encoding=UTF-8", "--disable-@files", "-cp", bootstrap,
                     TerminalSession.class.getName())), StandardCharsets.US_ASCII);
-            Files.writeString(directory.resolve("launch.cmd"), LAUNCH_SCRIPT, StandardCharsets.US_ASCII);
-            Files.writeString(directory.resolve("session.cmd"), SESSION_SCRIPT, StandardCharsets.US_ASCII);
+            Files.writeString(directory.resolve(SessionProtocol.LAUNCH), LAUNCH_SCRIPT, StandardCharsets.US_ASCII);
+            Files.writeString(directory.resolve(SessionProtocol.SESSION), SESSION_SCRIPT, StandardCharsets.US_ASCII);
             return files;
         } catch (IOException | RuntimeException e) {
-            files.closeQuietly();
+            files.closeAndReport(System.err);
             throw e;
         }
     }
@@ -195,13 +207,7 @@ final class WindowsTerminalLauncher implements Main.WindowSupport {
     }
 
     static String argumentFile(List<String> arguments) {
-        StringBuilder result = new StringBuilder();
-        for (String argument : arguments) {
-            result.append('"').append(argument.replace("\\", "\\\\").replace("\"", "\\\"")
-                    .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-                    .replace("\f", "\\f")).append("\"\n");
-        }
-        return result.toString();
+        return SessionProtocol.argumentFile(arguments);
     }
 
     static String asciiLaunchPath(Path path, Path workingDirectory) {
@@ -230,15 +236,15 @@ final class WindowsTerminalLauncher implements Main.WindowSupport {
             String systemRoot = System.getenv("SystemRoot");
             if (systemRoot == null) throw new IOException("Windows SystemRoot is not set");
             Path cmd = Path.of(systemRoot, "System32", "cmd.exe");
-            ProcessBuilder builder = new ProcessBuilder(cmd.toString(), "/d", "/s", "/v:off", "/c", "launch.cmd")
+            ProcessBuilder builder = new ProcessBuilder(cmd.toString(), "/d", "/e:on", "/s", "/v:off", "/c", SessionProtocol.LAUNCH)
                     .directory(directory.toFile()).redirectErrorStream(true)
-                    .redirectOutput(directory.resolve("launch.log").toFile());
+                    .redirectOutput(directory.resolve(SessionProtocol.LOG).toFile());
             Map<String, String> environment = builder.environment();
             environment.put("LEXOR_CMD", cmd.toString());
             environment.put("LEXOR_JAVA", java.toString());
             environment.put("LEXOR_WORKING_DIRECTORY", workingDirectory.toString());
-            environment.put("LEXOR_ARGUMENT_FILE", asciiLaunchPath(directory.resolve("java.args"), workingDirectory));
-            environment.put("LEXOR_SESSION_ARGUMENTS_FILE", directory.resolve("session.properties").toString());
+            environment.put("LEXOR_ARGUMENT_FILE", asciiLaunchPath(directory.resolve(SessionProtocol.JAVA_ARGUMENTS), workingDirectory));
+            environment.put("LEXOR_SESSION_ARGUMENTS_FILE", directory.resolve(SessionProtocol.ARGUMENTS).toString());
             environment.put("LEXOR_SESSION_DIRECTORY", directory.toString());
             ProcessHandle launcher = ProcessHandle.current();
             environment.put("LEXOR_LAUNCHER_PID", Long.toString(launcher.pid()));
@@ -249,18 +255,31 @@ final class WindowsTerminalLauncher implements Main.WindowSupport {
         @Override
         public synchronized void close() throws IOException {
             // Delete only this launch's known files, never a script or classpath entry.
-            for (String name : List.of("launch.cmd", "session.cmd", "java.args", "classpath.jar",
-                    "session.properties", "launch.log", "session.started", "session.exit")) {
-                Files.deleteIfExists(directory.resolve(name));
+            IOException failure = new IOException("Cannot remove terminal files from " + directory);
+            for (String name : SessionProtocol.OWNED_FILES) {
+                try {
+                    Files.deleteIfExists(directory.resolve(name));
+                } catch (IOException e) {
+                    failure.addSuppressed(e);
+                }
             }
-            Files.deleteIfExists(directory);
+            try {
+                Files.deleteIfExists(directory);
+            } catch (IOException e) {
+                failure.addSuppressed(e);
+            }
+            if (failure.getSuppressed().length != 0) throw failure;
         }
 
-        void closeQuietly() {
+        void closeAndReport(PrintStream diagnostics) {
             try {
                 close();
-            } catch (IOException ignored) {
-                // Best effort during shutdown; normal completion reports cleanup failures.
+            } catch (IOException e) {
+                diagnostics.println(e.getMessage());
+                for (Throwable leftover : e.getSuppressed()) {
+                    diagnostics.println("  " + leftover.getMessage());
+                }
+                diagnostics.flush();
             }
         }
     }

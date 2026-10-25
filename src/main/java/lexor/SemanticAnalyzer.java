@@ -11,6 +11,7 @@ public class SemanticAnalyzer {
     }
 
     public void analyze(ProgramNode program) {
+        ComplexityLimits.validateAst(program, LexorException.Phase.SEMANTIC);
         symbolTable = new SymbolTable();
         for (Node statement : program.statements) {
             analyzeNode(statement);
@@ -37,7 +38,7 @@ public class SemanticAnalyzer {
 
     private void analyzeDeclare(DeclareNode node) {
         if (node.value != null) {
-            ValueType valueType = inferType(node.value);
+            ValueType valueType = inferTypeInternal(node.value);
             checkTypeMatch(node.type, valueType, "Declaration of '" + node.name + "'", node.line);
         }
         symbolTable.declare(node.name, node.type, node.line, node.type.defaultValue());
@@ -47,7 +48,7 @@ public class SemanticAnalyzer {
 
     private void analyzeAssign(AssignNode node) {
         ValueType varType = symbolTable.getType(node.name, LexorException.Phase.SEMANTIC, node.line);
-        ValueType valueType = inferType(node.value);
+        ValueType valueType = inferTypeInternal(node.value);
         checkTypeMatch(varType, valueType, "Assignment to '" + node.name + "'", node.line);
     }
 
@@ -55,7 +56,7 @@ public class SemanticAnalyzer {
 
     private void analyzePrint(PrintNode node) {
         for (Node part : node.parts) {
-            inferType(part);
+            inferTypeInternal(part);
         }
     }
 
@@ -70,7 +71,7 @@ public class SemanticAnalyzer {
     // If ///////////////////////////////////////////////////////////////////////////////////////////
 
     private void analyzeIf(IfNode node) {
-        ValueType condType = inferType(node.condition);
+        ValueType condType = inferTypeInternal(node.condition);
         if (condType != ValueType.BOOL) {
             throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "IF condition must be BOOL, got " + condType + ".");
         }
@@ -83,7 +84,7 @@ public class SemanticAnalyzer {
 
     private void analyzeFor(ForNode node) {
         analyzeNode(node.initialization);
-        ValueType condType = inferType(node.condition);
+        ValueType condType = inferTypeInternal(node.condition);
         if (condType != ValueType.BOOL) {
             throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "FOR condition must be BOOL, got " + condType + ".");
         }
@@ -94,7 +95,7 @@ public class SemanticAnalyzer {
     // Repeat /////////////////////////////////////////////////////////////////////////////////////////
 
     private void analyzeRepeat(RepeatNode node) {
-        ValueType condType = inferType(node.condition);
+        ValueType condType = inferTypeInternal(node.condition);
         if (condType != ValueType.BOOL) {
             throw new LexorException(LexorException.Phase.SEMANTIC, node.line, "REPEAT WHEN condition must be BOOL, got " + condType + ".");
         }
@@ -110,6 +111,11 @@ public class SemanticAnalyzer {
     // Type Inference methods /////////////////////////////////////////////////////////////////////////
 
     public ValueType inferType(Node node) {
+        ComplexityLimits.validateAst(node, LexorException.Phase.SEMANTIC);
+        return inferTypeInternal(node);
+    }
+
+    private ValueType inferTypeInternal(Node node) {
         return switch (node) {
             case LiteralNode  n -> n.type;
             case VariableNode n -> symbolTable.getType(n.name, LexorException.Phase.SEMANTIC, n.line);
@@ -130,8 +136,8 @@ public class SemanticAnalyzer {
     }
 
     private ValueType inferBinaryType(BinaryOpNode node) {
-        ValueType left = inferType(node.left);
-        ValueType right = inferType(node.right);
+        ValueType left = inferTypeInternal(node.left);
+        ValueType right = inferTypeInternal(node.right);
 
         return switch (node.operator) {
             case "+", "-", "*", "/", "%" -> {
@@ -166,7 +172,7 @@ public class SemanticAnalyzer {
     }
 
     private ValueType inferUnaryType(UnaryOpNode node) {
-        ValueType operandType = inferType(node.operand);
+        ValueType operandType = inferTypeInternal(node.operand);
         return switch (node.operator) {
             case "+", "-" -> {
                 if (!operandType.isNumeric()) {

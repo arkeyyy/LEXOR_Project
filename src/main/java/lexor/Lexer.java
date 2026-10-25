@@ -35,6 +35,9 @@ public class Lexer {
 
     public Lexer(String source) {
         this.source = source;
+        // Only the first source code unit can be a UTF-8 signature after decoding.
+        // Advancing the offset keeps line numbering and every literal unchanged.
+        if (!source.isEmpty() && source.charAt(0) == '\uFEFF') pos = 1;
     }
 
     public List<Token> tokenize() {

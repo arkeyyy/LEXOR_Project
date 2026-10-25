@@ -7,6 +7,7 @@ import lexor.nodes.*;
 public class Parser {
     private final List<Token> tokens;
     private int pos;
+    private int nesting;
 
     public Parser(List<Token> tokens) {
         if (tokens.isEmpty() || tokens.getLast().type != TokenType.EOF) {
@@ -71,7 +72,9 @@ public class Parser {
         expect(TokenType.END_SCRIPT);
         if (!check(TokenType.EOF)) endLine();
         expect(TokenType.EOF);
-        return new ProgramNode(start.line, statements);
+        ProgramNode program = new ProgramNode(start.line, statements);
+        ComplexityLimits.validateAst(program, LexorException.Phase.PARSER);
+        return program;
     }
 
     private List<Node> parseDeclaration() {
@@ -97,11 +100,19 @@ public class Parser {
     }
 
     private Node parseStatement() {
-        switch (current().type) {
-            case IF: return parseIf();
-            case FOR: return parseFor();
-            case REPEAT_WHEN: return parseRepeat();
-            default: break;
+        Token token = current();
+        if (token.type == TokenType.IF || token.type == TokenType.FOR
+                || token.type == TokenType.REPEAT_WHEN) {
+            enterNesting(token);
+            try {
+                return switch (token.type) {
+                    case IF -> parseIf();
+                    case FOR -> parseFor();
+                    default -> parseRepeat();
+                };
+            } finally {
+                nesting--;
+            }
         }
         Node statement = switch (current().type) {
             case IDENTIFIER -> isIncDec(peek().type) ? parsePrimary() : parseAssignment();
@@ -116,10 +127,15 @@ public class Parser {
 
     private Node parseAssignment() {
         Token name = expect(TokenType.IDENTIFIER);
-        expect(TokenType.ASSIGN);
-        Node value = check(TokenType.IDENTIFIER) && peek().type == TokenType.ASSIGN
-                ? parseAssignment() : parseExpression();
-        return new AssignNode(name.line, name.value, value);
+        enterNesting(name);
+        try {
+            expect(TokenType.ASSIGN);
+            Node value = check(TokenType.IDENTIFIER) && peek().type == TokenType.ASSIGN
+                    ? parseAssignment() : parseExpression();
+            return new AssignNode(name.line, name.value, value);
+        } finally {
+            nesting--;
+        }
     }
 
     private Node parsePrint() {
@@ -276,15 +292,20 @@ public class Parser {
         }
         if (check(TokenType.MINUS) || check(TokenType.PLUS) || check(TokenType.NOT)) {
             consume();
-            // The minimum INT's magnitude is valid only directly beneath unary minus.
-            if (operator.type == TokenType.MINUS && check(TokenType.INT_LITERAL)) {
-                int negative = parseInteger(current(), "-" + current().value);
-                if (negative == Integer.MIN_VALUE) {
-                    consume();
-                    return new LiteralNode(operator.line, negative, ValueType.INT);
+            enterNesting(operator);
+            try {
+                // The minimum INT's magnitude is valid only directly beneath unary minus.
+                if (operator.type == TokenType.MINUS && check(TokenType.INT_LITERAL)) {
+                    int negative = parseInteger(current(), "-" + current().value);
+                    if (negative == Integer.MIN_VALUE) {
+                        consume();
+                        return new LiteralNode(operator.line, negative, ValueType.INT);
+                    }
                 }
+                return new UnaryOpNode(operator.line, operator.value, parseUnary());
+            } finally {
+                nesting--;
             }
-            return new UnaryOpNode(operator.line, operator.value, parseUnary());
         }
         return parsePrimary();
     }
@@ -322,9 +343,14 @@ public class Parser {
                 return new VariableNode(token.line, token.value);
             case LPAREN:
                 consume();
-                Node expression = parseExpression();
-                expect(TokenType.RPAREN);
-                return expression;
+                enterNesting(token);
+                try {
+                    Node expression = parseExpression();
+                    expect(TokenType.RPAREN);
+                    return expression;
+                } finally {
+                    nesting--;
+                }
             default:
                 throw error(token, "Unexpected token '" + token.value + "'.");
         }
@@ -344,5 +370,12 @@ public class Parser {
 
     private LexorException error(Token token, String message) {
         return new LexorException(LexorException.Phase.PARSER, token.line, message);
+    }
+
+    private void enterNesting(Token token) {
+        if (nesting == ComplexityLimits.PARSER_NESTING) {
+            throw error(token, "Parser nesting exceeds limit of " + ComplexityLimits.PARSER_NESTING + ".");
+        }
+        nesting++;
     }
 }
