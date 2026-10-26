@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=A96045&height=100" alt="LEXOR banner" />
+  <img src=".github/assets/readme-wave.svg" width="100%" height="40" alt="LEXOR banner" />
   <h1>LEXOR</h1>
   <p><strong>A small language. A complete interpreter.</strong></p>
   <p>Write readable <code>.lxr</code> scripts with typed variables, structured control flow, and interactive console I/O.</p>
